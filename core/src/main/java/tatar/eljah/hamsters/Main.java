@@ -124,8 +124,31 @@ public class Main extends ApplicationAdapter {
             float tiltX = Gdx.input.getAccelerometerX();
             float tiltY = Gdx.input.getAccelerometerY();
 
-            hamster.x -= tiltX * 200 * Gdx.graphics.getDeltaTime();
-            hamster.y += tiltY * 200 * Gdx.graphics.getDeltaTime(); // Y increases upwards
+            float accelX = Gdx.input.getAccelerometerX();
+            float accelY = Gdx.input.getAccelerometerY();
+
+
+            if (accelX < -1){
+                //go up
+                hamster.y += 200 * Gdx.graphics.getDeltaTime(); // Y increases upwards
+            }
+            if (accelY < -1 ){
+                //go left
+                hamster.x -= 200 * Gdx.graphics.getDeltaTime();
+            }
+
+            if (accelX > +1 ){
+                //go down
+                hamster.y -= 200 * Gdx.graphics.getDeltaTime(); // Y decreases downwards
+            }
+
+            if (accelY > +1){
+                //go right
+                hamster.x += 200 * Gdx.graphics.getDeltaTime();
+            }
+
+            //hamster.x -= tiltX * 200 * Gdx.graphics.getDeltaTime();
+            //hamster.y += tiltY * 200 * Gdx.graphics.getDeltaTime(); // Y increases upwards
         } else {
             // Use keyboard for desktop and HTML
             if (Gdx.input.isKeyPressed(Input.Keys.LEFT)) hamster.x -= 200 * Gdx.graphics.getDeltaTime();
