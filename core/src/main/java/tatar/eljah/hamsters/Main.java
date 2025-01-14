@@ -28,6 +28,7 @@ public class Main extends ApplicationAdapter {
     private Vector2 gradeDirection;
     private boolean gameOver;
     private boolean hamsterWin;
+    private OnscreenControlRenderer controlRenderer;
 
     @Override
     public void create() {
@@ -40,10 +41,16 @@ public class Main extends ApplicationAdapter {
         camera = new OrthographicCamera();
         camera.setToOrtho(false, 800, 600);
 
+        controlRenderer = new OnscreenControlRenderer();
+
         resetGame();
     }
 
     private void resetGame() {
+        gameOver = false;
+        hamsterWin = false;
+
+        Gdx.app.log("hamsters", "Game is reset");
         hamster = new Rectangle();
         hamster.x = 400 - 32;
         hamster.y = 300 - 32;
@@ -82,6 +89,7 @@ public class Main extends ApplicationAdapter {
 
         gradeDirection = new Vector2(MathUtils.random(-1, 1), MathUtils.random(-1, 1)).nor();
         gameOver = false;
+        controlRenderer.render();
     }
 
     @Override
@@ -96,8 +104,8 @@ public class Main extends ApplicationAdapter {
                 batch.draw(gradeTexture, 350, 250, 100, 100);
             }
             batch.end();
-
             if (Gdx.input.isTouched()) {
+
                 resetGame();
             }
             return;
@@ -120,29 +128,45 @@ public class Main extends ApplicationAdapter {
 
         // Hamster movement
         if (Gdx.app.getType() == com.badlogic.gdx.Application.ApplicationType.Android) {
+
+            float x0 = (Gdx.input.getX(0) / (float)Gdx.graphics.getWidth()) * 480;
+            float x1 = (Gdx.input.getX(1) / (float)Gdx.graphics.getWidth()) * 480;
+            float y0 = 320 - (Gdx.input.getY(0) / (float)Gdx.graphics.getHeight()) * 320;
+
+            boolean leftButton = (Gdx.input.isTouched(0) && x0 < 70) || (Gdx.input.isTouched(1) && x1 < 70);
+            boolean rightButton = (Gdx.input.isTouched(0) && x0 > 70 && x0 < 134) || (Gdx.input.isTouched(1) && x1 > 70 && x1 < 134);
+            boolean downButton = (Gdx.input.isTouched(0) && x0 > 416 && x0 < 480 && y0 > 320 - 128 && y0 < 320 - 64)
+                || (Gdx.input.isTouched(1) && x1 > 416 && x1 < 480 && y0 > 320 - 128 && y0 < 320 -64);
+            boolean upButton = (Gdx.input.isTouched(0) && x0 > 416 && x0 < 480 && y0 > 320 - 64)
+                || (Gdx.input.isTouched(1) && x1 > 416 && x1 < 480 && y0 > 320 - 64);
+
+
             // Use accelerometer for Android
-            float tiltX = Gdx.input.getAccelerometerX();
-            float tiltY = Gdx.input.getAccelerometerY();
-
-            float accelX = Gdx.input.getAccelerometerX();
-            float accelY = Gdx.input.getAccelerometerY();
-
-
-            if (accelX < -1){
+//            float tiltX = Gdx.input.getAccelerometerX();
+//            float tiltY = Gdx.input.getAccelerometerY();
+//
+//            float accelX = Gdx.input.getAccelerometerX();
+//            float accelY = Gdx.input.getAccelerometerY();
+//
+//            if (accelX < -1){
+               if (upButton){
                 //go up
                 hamster.y += 200 * Gdx.graphics.getDeltaTime(); // Y increases upwards
             }
-            if (accelY < -1 ){
+            //if (accelY < -1 ){
+            if (leftButton ){
                 //go left
                 hamster.x -= 200 * Gdx.graphics.getDeltaTime();
             }
 
-            if (accelX > +1 ){
+            //if (accelX > +1 ){
+            if (downButton){
                 //go down
                 hamster.y -= 200 * Gdx.graphics.getDeltaTime(); // Y decreases downwards
             }
 
-            if (accelY > +1){
+            //if (accelY > +1){
+            if (rightButton){
                 //go right
                 hamster.x += 200 * Gdx.graphics.getDeltaTime();
             }
@@ -195,6 +219,7 @@ public class Main extends ApplicationAdapter {
                 hamsterWin = false;
             }
         }
+        controlRenderer.render();
     }
 
     @Override
@@ -204,5 +229,6 @@ public class Main extends ApplicationAdapter {
         gradeTexture.dispose();
         blockTexture.dispose();
         backgroundTexture.dispose();
+        controlRenderer.dispose();
     }
 }
