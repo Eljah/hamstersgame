@@ -104,8 +104,8 @@ public class Main extends ApplicationAdapter {
                 batch.draw(gradeTexture, 350, 250, 100, 100);
             }
             batch.end();
-            if (Gdx.input.isTouched()) {
-
+            // Add delay to prevent accidental resets
+            if (Gdx.input.isTouched() && Gdx.input.justTouched()) {
                 resetGame();
             }
             return;
