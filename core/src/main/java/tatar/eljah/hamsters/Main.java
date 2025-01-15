@@ -6,6 +6,7 @@ import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Rectangle;
@@ -18,6 +19,7 @@ public class Main extends ApplicationAdapter {
     private Texture gradeTexture;
     private Texture blockTexture;
     private Texture backgroundTexture;
+    private BitmapFont font;
 
     private OrthographicCamera camera;
 
@@ -28,6 +30,8 @@ public class Main extends ApplicationAdapter {
     private Vector2 gradeDirection;
     private boolean gameOver;
     private boolean hamsterWin;
+    private int hamsterScore;
+    private int gradeScore;
     private OnscreenControlRenderer controlRenderer;
 
     @Override
@@ -37,11 +41,15 @@ public class Main extends ApplicationAdapter {
         gradeTexture = new Texture("grade.png");
         blockTexture = new Texture("block.png");
         backgroundTexture = new Texture("liner.png");
+        font = new BitmapFont();
 
         camera = new OrthographicCamera();
         camera.setToOrtho(false, 800, 600);
 
         controlRenderer = new OnscreenControlRenderer();
+
+        hamsterScore = 0;
+        gradeScore = 0;
 
         resetGame();
     }
@@ -88,8 +96,6 @@ public class Main extends ApplicationAdapter {
         }
 
         gradeDirection = new Vector2(MathUtils.random(-1, 1), MathUtils.random(-1, 1)).nor();
-        gameOver = false;
-        controlRenderer.render();
     }
 
     @Override
@@ -98,13 +104,14 @@ public class Main extends ApplicationAdapter {
             Gdx.gl.glClearColor(1, 0, 0, 1);
             Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
             batch.begin();
+            font.draw(batch, "Hamster: " + hamsterScore, 10, 590);
+            font.draw(batch, "Grade: " + gradeScore, 10, 560);
             if (hamsterWin) {
                 batch.draw(hamsterTexture, 350, 250, 100, 100);
             } else {
                 batch.draw(gradeTexture, 350, 250, 100, 100);
             }
             batch.end();
-            // Add delay to prevent accidental resets
             if (Gdx.input.isTouched() && Gdx.input.justTouched()) {
                 resetGame();
             }
@@ -124,6 +131,8 @@ public class Main extends ApplicationAdapter {
         for (Rectangle block : blocks) {
             batch.draw(blockTexture, block.x, block.y);
         }
+        font.draw(batch, "Hamster: " + hamsterScore, 10, 590);
+        font.draw(batch, "Grade: " + gradeScore, 10, 560);
         batch.end();
 
         // Hamster movement
@@ -141,58 +150,35 @@ public class Main extends ApplicationAdapter {
                 || (Gdx.input.isTouched(1) && x1 > 416 && x1 < 480 && y0 > 320 - 64);
 
 
-            // Use accelerometer for Android
-//            float tiltX = Gdx.input.getAccelerometerX();
-//            float tiltY = Gdx.input.getAccelerometerY();
-//
-//            float accelX = Gdx.input.getAccelerometerX();
-//            float accelY = Gdx.input.getAccelerometerY();
-//
-//            if (accelX < -1){
-               if (upButton){
-                //go up
+            if (upButton){
                 hamster.y += 200 * Gdx.graphics.getDeltaTime(); // Y increases upwards
             }
-            //if (accelY < -1 ){
             if (leftButton ){
-                //go left
                 hamster.x -= 200 * Gdx.graphics.getDeltaTime();
             }
-
-            //if (accelX > +1 ){
             if (downButton){
-                //go down
                 hamster.y -= 200 * Gdx.graphics.getDeltaTime(); // Y decreases downwards
             }
-
-            //if (accelY > +1){
             if (rightButton){
-                //go right
                 hamster.x += 200 * Gdx.graphics.getDeltaTime();
             }
 
-            //hamster.x -= tiltX * 200 * Gdx.graphics.getDeltaTime();
-            //hamster.y += tiltY * 200 * Gdx.graphics.getDeltaTime(); // Y increases upwards
         } else {
-            // Use keyboard for desktop and HTML
             if (Gdx.input.isKeyPressed(Input.Keys.LEFT)) hamster.x -= 200 * Gdx.graphics.getDeltaTime();
             if (Gdx.input.isKeyPressed(Input.Keys.RIGHT)) hamster.x += 200 * Gdx.graphics.getDeltaTime();
             if (Gdx.input.isKeyPressed(Input.Keys.UP)) hamster.y += 200 * Gdx.graphics.getDeltaTime(); // Y increases upwards
             if (Gdx.input.isKeyPressed(Input.Keys.DOWN)) hamster.y -= 200 * Gdx.graphics.getDeltaTime(); // Y decreases downwards
         }
 
-        // Prevent hamster from moving out of bounds
         hamster.x = MathUtils.clamp(hamster.x, 0, 800 - hamster.width);
         hamster.y = MathUtils.clamp(hamster.y, 0, 600 - hamster.height);
 
-        // Grade movement
         grade.x += gradeDirection.x * 100 * Gdx.graphics.getDeltaTime();
         grade.y += gradeDirection.y * 100 * Gdx.graphics.getDeltaTime();
 
         if (grade.x < 0 || grade.x > 800 - 64) gradeDirection.x = -gradeDirection.x;
         if (grade.y < 0 || grade.y > 600 - 64) gradeDirection.y = -gradeDirection.y;
 
-        // Collision detection and bouncing
         for (Rectangle block : blocks) {
             if (hamster.overlaps(block)) {
                 if (hamster.x < block.x) hamster.x = block.x - hamster.width;
@@ -214,9 +200,11 @@ public class Main extends ApplicationAdapter {
                 blocks.clear(); // Hamster wins by defeating the grade
                 gameOver = true;
                 hamsterWin = true;
+                hamsterScore++;
             } else {
                 gameOver = true; // Grade wins otherwise
                 hamsterWin = false;
+                gradeScore++;
             }
         }
         controlRenderer.render();
@@ -229,6 +217,7 @@ public class Main extends ApplicationAdapter {
         gradeTexture.dispose();
         blockTexture.dispose();
         backgroundTexture.dispose();
+        font.dispose();
         controlRenderer.dispose();
     }
 }
