@@ -30,6 +30,7 @@ public class Main extends ApplicationAdapter {
     private Vector2 gradeDirection;
     private boolean gameOver;
     private boolean hamsterWin;
+    private boolean[][] grid;
     private int hamsterScore;
     private int gradeScore;
     private OnscreenControlRenderer controlRenderer;
@@ -55,48 +56,86 @@ public class Main extends ApplicationAdapter {
     }
 
     private void resetGame() {
+        Rectangle block = null;
         gameOver = false;
         hamsterWin = false;
 
-        Gdx.app.log("hamsters", "Game is reset");
-        hamster = new Rectangle();
-        hamster.x = 400 - 32;
-        hamster.y = 300 - 32;
-        hamster.width = 64;
-        hamster.height = 64;
-
-        grade = new Rectangle();
-        grade.x = MathUtils.random(0, 800 - 64);
-        grade.y = MathUtils.random(0, 600 - 64);
-        grade.width = 64;
-        grade.height = 64;
+        hamster = new Rectangle(400 - 32, 300 - 32, 64, 64);
+        grade = new Rectangle(MathUtils.random(0, 800 - 64), MathUtils.random(0, 600 - 64), 64, 64);
 
         blocks = new Array<>();
-        Array<Float> usedXPositions = new Array<>();
-        Array<Float> usedYPositions = new Array<>();
+        grid = new boolean[800 / 64][600 / 64];
 
         for (int i = 0; i < 10; i++) {
-            Rectangle block = new Rectangle();
-            float blockX, blockY;
+            boolean validPlacement;
 
-            // Place blocks on a grid for Y and check for overlap on X
             do {
-                blockY = (116 * MathUtils.random(0, 4)) + 71 - block.height - 8; // Grid for Y-axis
-                blockX = MathUtils.random(0, 800 - block.width); // Random X
-            } while (usedXPositions.contains(blockX, false) && usedYPositions.contains(blockY, false));
+                validPlacement = true;
+                int gridX = MathUtils.random(0, 800 / 64 - 1);
+                int gridY = MathUtils.random(0, 4); // Restrict Y positions based on the formula
+                float blockY = (116 * gridY) + 71 + 22;
+                float blockX = MathUtils.random(0, 800 - 64);
 
-            block.x = blockX;
-            block.y = blockY;
-            block.width = 64;
-            block.height = 64;
+                if (grid[gridX][gridY]) {
+                    validPlacement = false;
+                    continue;
+                }
+
+                block = new Rectangle(blockX, blockY, 64, 64);
+
+                for (Rectangle existingBlock : blocks) {
+                    if (block.overlaps(existingBlock)) {
+                        validPlacement = false;
+                        break;
+                    }
+                }
+
+                if (validPlacement && !checkPaths(block)) {
+                    validPlacement = false;
+                }
+
+            } while (!validPlacement);
 
             blocks.add(block);
-            usedXPositions.add(blockX);
-            usedYPositions.add(blockY);
+            grid[(int) (block.x / 64)][MathUtils.floor((block.y   - 71 - 22) / 116)] = true;
         }
-
         gradeDirection = new Vector2(MathUtils.random(-1, 1), MathUtils.random(-1, 1)).nor();
     }
+
+    private boolean checkPaths(Rectangle newBlock) {
+        boolean[][] tempGrid = new boolean[grid.length][grid[0].length];
+
+        for (int x = 0; x < grid.length; x++) {
+            System.arraycopy(grid[x], 0, tempGrid[x], 0, grid[x].length);
+        }
+
+        tempGrid[(int) (newBlock.x / 64)][MathUtils.floor((newBlock.y + 64 + 8 - 71) / 116)] = true;
+
+        for (int x = 0; x < grid.length; x++) {
+            boolean hasHorizontalCorridor = true;
+            for (int y = 0; y < grid[0].length; y++) {
+                if (tempGrid[x][y]) {
+                    hasHorizontalCorridor = false;
+                    break;
+                }
+            }
+            if (hasHorizontalCorridor) return true;
+        }
+
+        for (int y = 0; y < grid[0].length; y++) {
+            boolean hasVerticalCorridor = true;
+            for (int x = 0; x < grid.length; x++) {
+                if (tempGrid[x][y]) {
+                    hasVerticalCorridor = false;
+                    break;
+                }
+            }
+            if (hasVerticalCorridor) return true;
+        }
+
+        return false;
+    }
+
 
     @Override
     public void render() {
