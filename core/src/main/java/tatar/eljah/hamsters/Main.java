@@ -56,95 +56,84 @@ public class Main extends ApplicationAdapter {
         resetGame();
     }
 
-    private void resetGame() {
-        Rectangle block = null;
+    static final int GRID_WIDTH = 800 / 64;
+    static final int GRID_HEIGHT = 600 / 64;
+
+    Rectangle getHamster() { return hamster; }
+    Rectangle getGrade() { return grade; }
+    boolean[][] getGrid() { return grid; }
+
+    void resetGame() {
         gameOver = false;
         hamsterWin = false;
 
         hamster = new Rectangle(400 - 32, 300 - 32, 64, 64);
-        grade = new Rectangle(MathUtils.random(0, 800 - 64), MathUtils.random(0, 600 - 64), 64, 64);
 
         blocks = new Array<>();
-        grid = new boolean[800 / 64][600 / 64];
+        grid = new boolean[GRID_WIDTH][GRID_HEIGHT];
 
+        // generate random blocks
         for (int i = 0; i < 10; i++) {
-            boolean validPlacement;
-            int gridX = 0;
-            int gridY = 0;
-
+            int gx;
+            int gy;
             do {
-                validPlacement = true;
-                gridX = MathUtils.random(0, 800 / 64 - 1);
-                gridY = MathUtils.random(0, 4); // Restrict Y positions based on the formula
-                float blockY = (116 * gridY) + 71 + 22;
-                float blockX = gridX * 64f;
+                gx = MathUtils.random(0, GRID_WIDTH - 1);
+                gy = MathUtils.random(0, GRID_HEIGHT - 1);
+            } while (grid[gx][gy] || (gx == (int)(hamster.x / 64) && gy == (int)(hamster.y / 64)));
 
-                if (grid[gridX][gridY]) {
-                    validPlacement = false;
-                    continue;
-                }
-
-                block = new Rectangle(blockX, blockY, 64, 64);
-
-                if (block.overlaps(hamster) || block.overlaps(grade)) {
-                    validPlacement = false;
-                }
-
-                for (Rectangle existingBlock : blocks) {
-                    if (block.overlaps(existingBlock)) {
-                        validPlacement = false;
-                        break;
-                    }
-                }
-
-                if (validPlacement && !checkPaths(block)) {
-                    validPlacement = false;
-                }
-
-            } while (!validPlacement);
-
+            Rectangle block = new Rectangle(gx * 64f, gy * 64f, 64, 64);
             blocks.add(block);
-            grid[gridX][gridY] = true;
+            grid[gx][gy] = true;
         }
+
+        int hx = (int) (hamster.x / 64);
+        int hy = (int) (hamster.y / 64);
+        boolean placed = false;
+        for (int attempt = 0; attempt < 1000 && !placed; attempt++) {
+            int gx = MathUtils.random(0, GRID_WIDTH - 1);
+            int gy = MathUtils.random(0, GRID_HEIGHT - 2); // ensure space above
+            if (grid[gx][gy] || grid[gx][gy + 1]) continue;
+            if (gx == hx && gy == hy) continue;
+
+            grid[gx][gy] = true;
+            boolean canReachAbove = isReachable(hx, hy, gx, gy + 1);
+            grid[gx][gy] = false;
+
+            if (canReachAbove && isReachable(hx, hy, gx, gy)) {
+                grade = new Rectangle(gx * 64f, gy * 64f, 64, 64);
+                placed = true;
+            }
+        }
+        if (!placed) {
+            resetGame();
+            return;
+        }
+
         do {
             gradeDirection = new Vector2(MathUtils.random(-1f, 1f), MathUtils.random(-1f, 1f));
         } while (gradeDirection.isZero());
         gradeDirection.nor();
     }
 
-    private boolean checkPaths(Rectangle newBlock) {
-        boolean[][] tempGrid = new boolean[grid.length][grid[0].length];
-
-        for (int x = 0; x < grid.length; x++) {
-            System.arraycopy(grid[x], 0, tempGrid[x], 0, grid[x].length);
-        }
-
-        int gridX = (int) (newBlock.x / 64);
-        int gridY = MathUtils.floor((newBlock.y - 71 - 22) / 116);
-        tempGrid[gridX][gridY] = true;
-
-        for (int x = 0; x < grid.length; x++) {
-            boolean hasHorizontalCorridor = true;
-            for (int y = 0; y < grid[0].length; y++) {
-                if (tempGrid[x][y]) {
-                    hasHorizontalCorridor = false;
-                    break;
+    private boolean isReachable(int startX, int startY, int targetX, int targetY) {
+        if (grid[targetX][targetY]) return false;
+        boolean[][] visited = new boolean[GRID_WIDTH][GRID_HEIGHT];
+        java.util.ArrayDeque<int[]> queue = new java.util.ArrayDeque<>();
+        queue.add(new int[]{startX, startY});
+        visited[startX][startY] = true;
+        int[][] dirs = {{1,0},{-1,0},{0,1},{0,-1}};
+        while (!queue.isEmpty()) {
+            int[] p = queue.poll();
+            if (p[0] == targetX && p[1] == targetY) return true;
+            for (int[] d : dirs) {
+                int nx = p[0] + d[0];
+                int ny = p[1] + d[1];
+                if (nx >= 0 && ny >= 0 && nx < GRID_WIDTH && ny < GRID_HEIGHT && !grid[nx][ny] && !visited[nx][ny]) {
+                    visited[nx][ny] = true;
+                    queue.add(new int[]{nx, ny});
                 }
             }
-            if (hasHorizontalCorridor) return true;
         }
-
-        for (int y = 0; y < grid[0].length; y++) {
-            boolean hasVerticalCorridor = true;
-            for (int x = 0; x < grid.length; x++) {
-                if (tempGrid[x][y]) {
-                    hasVerticalCorridor = false;
-                    break;
-                }
-            }
-            if (hasVerticalCorridor) return true;
-        }
-
         return false;
     }
 
