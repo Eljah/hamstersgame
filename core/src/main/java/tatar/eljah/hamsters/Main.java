@@ -6,6 +6,7 @@ import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.math.MathUtils;
@@ -13,6 +14,7 @@ import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.math.Intersector;
 import com.badlogic.gdx.utils.Array;
+import io.github.fxzjshm.gdx.svg2pixmap.Svg2Pixmap;
 
 public class Main extends ApplicationAdapter {
     private SpriteBatch batch;
@@ -39,9 +41,19 @@ public class Main extends ApplicationAdapter {
     @Override
     public void create() {
         batch = new SpriteBatch();
-        hamsterTexture = new Texture("hamster.png");
-        gradeTexture = new Texture("grade.png");
-        blockTexture = new Texture("block.png");
+
+        Pixmap hamsterPixmap = Svg2Pixmap.svg2Pixmap(Gdx.files.internal("hamster.svg").readString());
+        hamsterTexture = new Texture(hamsterPixmap);
+        hamsterPixmap.dispose();
+
+        Pixmap gradePixmap = Svg2Pixmap.svg2Pixmap(Gdx.files.internal("grade.svg").readString());
+        gradeTexture = new Texture(gradePixmap);
+        gradePixmap.dispose();
+
+        Pixmap blockPixmap = Svg2Pixmap.svg2Pixmap(Gdx.files.internal("block.svg").readString());
+        blockTexture = new Texture(blockPixmap);
+        blockPixmap.dispose();
+
         backgroundTexture = new Texture("liner.png");
         font = new BitmapFont();
 
