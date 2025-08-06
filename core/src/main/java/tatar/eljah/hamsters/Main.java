@@ -11,6 +11,7 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.math.Intersector;
 import com.badlogic.gdx.utils.Array;
 
 public class Main extends ApplicationAdapter {
@@ -68,13 +69,15 @@ public class Main extends ApplicationAdapter {
 
         for (int i = 0; i < 10; i++) {
             boolean validPlacement;
+            int gridX = 0;
+            int gridY = 0;
 
             do {
                 validPlacement = true;
-                int gridX = MathUtils.random(0, 800 / 64 - 1);
-                int gridY = MathUtils.random(0, 4); // Restrict Y positions based on the formula
+                gridX = MathUtils.random(0, 800 / 64 - 1);
+                gridY = MathUtils.random(0, 4); // Restrict Y positions based on the formula
                 float blockY = (116 * gridY) + 71 + 22;
-                float blockX = MathUtils.random(0, 800 - 64);
+                float blockX = gridX * 64f;
 
                 if (grid[gridX][gridY]) {
                     validPlacement = false;
@@ -82,6 +85,10 @@ public class Main extends ApplicationAdapter {
                 }
 
                 block = new Rectangle(blockX, blockY, 64, 64);
+
+                if (block.overlaps(hamster) || block.overlaps(grade)) {
+                    validPlacement = false;
+                }
 
                 for (Rectangle existingBlock : blocks) {
                     if (block.overlaps(existingBlock)) {
@@ -97,9 +104,12 @@ public class Main extends ApplicationAdapter {
             } while (!validPlacement);
 
             blocks.add(block);
-            grid[(int) (block.x / 64)][MathUtils.floor((block.y   - 71 - 22) / 116)] = true;
+            grid[gridX][gridY] = true;
         }
-        gradeDirection = new Vector2(MathUtils.random(-1, 1), MathUtils.random(-1, 1)).nor();
+        do {
+            gradeDirection = new Vector2(MathUtils.random(-1f, 1f), MathUtils.random(-1f, 1f));
+        } while (gradeDirection.isZero());
+        gradeDirection.nor();
     }
 
     private boolean checkPaths(Rectangle newBlock) {
@@ -109,7 +119,9 @@ public class Main extends ApplicationAdapter {
             System.arraycopy(grid[x], 0, tempGrid[x], 0, grid[x].length);
         }
 
-        tempGrid[(int) (newBlock.x / 64)][MathUtils.floor((newBlock.y + 64 + 8 - 71) / 116)] = true;
+        int gridX = (int) (newBlock.x / 64);
+        int gridY = MathUtils.floor((newBlock.y - 71 - 22) / 116);
+        tempGrid[gridX][gridY] = true;
 
         for (int x = 0; x < grid.length; x++) {
             boolean hasHorizontalCorridor = true;
@@ -219,20 +231,46 @@ public class Main extends ApplicationAdapter {
         if (grade.y < 0 || grade.y > 600 - 64) gradeDirection.y = -gradeDirection.y;
 
         for (Rectangle block : blocks) {
-            if (hamster.overlaps(block)) {
-                if (hamster.x < block.x) hamster.x = block.x - hamster.width;
-                if (hamster.x > block.x) hamster.x = block.x + block.width;
-                if (hamster.y < block.y) hamster.y = block.y - hamster.height;
-                if (hamster.y > block.y) hamster.y = block.y + block.height;
+            Rectangle intersection = new Rectangle();
+            if (Intersector.intersectRectangles(hamster, block, intersection)) {
+                if (intersection.width < intersection.height) {
+                    if (hamster.x < block.x) {
+                        hamster.x -= intersection.width;
+                    } else {
+                        hamster.x += intersection.width;
+                    }
+                } else {
+                    if (hamster.y < block.y) {
+                        hamster.y -= intersection.height;
+                    } else {
+                        hamster.y += intersection.height;
+                    }
+                }
             }
 
-            if (grade.overlaps(block)) {
-                if (grade.x < block.x) gradeDirection.x = -Math.abs(gradeDirection.x);
-                if (grade.x > block.x) gradeDirection.x = Math.abs(gradeDirection.x);
-                if (grade.y < block.y) gradeDirection.y = -Math.abs(gradeDirection.y);
-                if (grade.y > block.y) gradeDirection.y = Math.abs(gradeDirection.y);
+            if (Intersector.intersectRectangles(grade, block, intersection)) {
+                if (intersection.width < intersection.height) {
+                    if (grade.x < block.x) {
+                        grade.x -= intersection.width;
+                    } else {
+                        grade.x += intersection.width;
+                    }
+                    gradeDirection.x = -gradeDirection.x;
+                } else {
+                    if (grade.y < block.y) {
+                        grade.y -= intersection.height;
+                    } else {
+                        grade.y += intersection.height;
+                    }
+                    gradeDirection.y = -gradeDirection.y;
+                }
             }
         }
+
+        hamster.x = MathUtils.clamp(hamster.x, 0, 800 - hamster.width);
+        hamster.y = MathUtils.clamp(hamster.y, 0, 600 - hamster.height);
+        grade.x = MathUtils.clamp(grade.x, 0, 800 - grade.width);
+        grade.y = MathUtils.clamp(grade.y, 0, 600 - grade.height);
 
         if (hamster.overlaps(grade)) {
             if (hamster.y >= grade.y + grade.height - 5) { // Hamster attacks from above
