@@ -179,7 +179,7 @@ public class Main extends ApplicationAdapter {
         batch.setProjectionMatrix(camera.combined);
 
         batch.begin();
-        batch.draw(backgroundTexture, 0, 0, 800, 600); // Draw background
+        batch.draw(backgroundTexture, 0, 0, 800, 600);
         batch.draw(hamsterTexture, hamster.x, hamster.y);
         batch.draw(gradeTexture, grade.x, grade.y);
         for (Rectangle block : blocks) {
@@ -191,37 +191,34 @@ public class Main extends ApplicationAdapter {
 
         // Hamster movement
         if (Gdx.app.getType() == com.badlogic.gdx.Application.ApplicationType.Android) {
-
-            float x0 = (Gdx.input.getX(0) / (float)Gdx.graphics.getWidth()) * 480;
-            float x1 = (Gdx.input.getX(1) / (float)Gdx.graphics.getWidth()) * 480;
-            float y0 = 320 - (Gdx.input.getY(0) / (float)Gdx.graphics.getHeight()) * 320;
+            float x0 = (Gdx.input.getX(0) / (float) Gdx.graphics.getWidth()) * 480;
+            float x1 = (Gdx.input.getX(1) / (float) Gdx.graphics.getWidth()) * 480;
+            float y0 = 320 - (Gdx.input.getY(0) / (float) Gdx.graphics.getHeight()) * 320;
 
             boolean leftButton = (Gdx.input.isTouched(0) && x0 < 70) || (Gdx.input.isTouched(1) && x1 < 70);
             boolean rightButton = (Gdx.input.isTouched(0) && x0 > 70 && x0 < 134) || (Gdx.input.isTouched(1) && x1 > 70 && x1 < 134);
             boolean downButton = (Gdx.input.isTouched(0) && x0 > 416 && x0 < 480 && y0 > 320 - 128 && y0 < 320 - 64)
-                || (Gdx.input.isTouched(1) && x1 > 416 && x1 < 480 && y0 > 320 - 128 && y0 < 320 -64);
+                    || (Gdx.input.isTouched(1) && x1 > 416 && x1 < 480 && y0 > 320 - 128 && y0 < 320 - 64);
             boolean upButton = (Gdx.input.isTouched(0) && x0 > 416 && x0 < 480 && y0 > 320 - 64)
-                || (Gdx.input.isTouched(1) && x1 > 416 && x1 < 480 && y0 > 320 - 64);
+                    || (Gdx.input.isTouched(1) && x1 > 416 && x1 < 480 && y0 > 320 - 64);
 
-
-            if (upButton){
-                hamster.y += 200 * Gdx.graphics.getDeltaTime(); // Y increases upwards
+            if (upButton) {
+                hamster.y += 200 * Gdx.graphics.getDeltaTime();
             }
-            if (leftButton ){
+            if (leftButton) {
                 hamster.x -= 200 * Gdx.graphics.getDeltaTime();
             }
-            if (downButton){
-                hamster.y -= 200 * Gdx.graphics.getDeltaTime(); // Y decreases downwards
+            if (downButton) {
+                hamster.y -= 200 * Gdx.graphics.getDeltaTime();
             }
-            if (rightButton){
+            if (rightButton) {
                 hamster.x += 200 * Gdx.graphics.getDeltaTime();
             }
-
         } else {
             if (Gdx.input.isKeyPressed(Input.Keys.LEFT)) hamster.x -= 200 * Gdx.graphics.getDeltaTime();
             if (Gdx.input.isKeyPressed(Input.Keys.RIGHT)) hamster.x += 200 * Gdx.graphics.getDeltaTime();
-            if (Gdx.input.isKeyPressed(Input.Keys.UP)) hamster.y += 200 * Gdx.graphics.getDeltaTime(); // Y increases upwards
-            if (Gdx.input.isKeyPressed(Input.Keys.DOWN)) hamster.y -= 200 * Gdx.graphics.getDeltaTime(); // Y decreases downwards
+            if (Gdx.input.isKeyPressed(Input.Keys.UP)) hamster.y += 200 * Gdx.graphics.getDeltaTime();
+            if (Gdx.input.isKeyPressed(Input.Keys.DOWN)) hamster.y -= 200 * Gdx.graphics.getDeltaTime();
         }
 
         hamster.x = MathUtils.clamp(hamster.x, 0, 800 - hamster.width);
@@ -247,12 +244,8 @@ public class Main extends ApplicationAdapter {
                         hamster.y -= intersection.height;
                     } else {
                         hamster.y += intersection.height;
-        }
-
-        if (AUTO_EXIT && ++framesRendered > 2) {
-            Gdx.app.exit();
-        }
-    }
+                    }
+                }
             }
 
             if (Intersector.intersectRectangles(grade, block, intersection)) {
@@ -280,18 +273,23 @@ public class Main extends ApplicationAdapter {
         grade.y = MathUtils.clamp(grade.y, 0, 600 - grade.height);
 
         if (hamster.overlaps(grade)) {
-            if (hamster.y >= grade.y + grade.height - 5) { // Hamster attacks from above
-                blocks.clear(); // Hamster wins by defeating the grade
+            if (hamster.y >= grade.y + grade.height - 5) {
+                blocks.clear();
                 gameOver = true;
                 hamsterWin = true;
                 hamsterScore++;
             } else {
-                gameOver = true; // Grade wins otherwise
+                gameOver = true;
                 hamsterWin = false;
                 gradeScore++;
             }
         }
+
         controlRenderer.render();
+
+        if (AUTO_EXIT && ++framesRendered > 2) {
+            Gdx.app.exit();
+        }
     }
 
     @Override
