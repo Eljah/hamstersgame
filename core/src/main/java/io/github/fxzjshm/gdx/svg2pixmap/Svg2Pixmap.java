@@ -311,8 +311,8 @@ public class Svg2Pixmap {
     public static Pixmap svg2Pixmap(String fileContent) {
         XmlReader reader = new XmlReader();
         XmlReader.Element root = reader.parse(fileContent);
-        int width = Integer.parseInt(root.getAttribute("width"));
-        int height = Integer.parseInt(root.getAttribute("height"));
+        int width = H.svgReadInt(root.getAttribute("width"));
+        int height = H.svgReadInt(root.getAttribute("height"));
         return svg2Pixmap(fileContent, width, height);
     }
 

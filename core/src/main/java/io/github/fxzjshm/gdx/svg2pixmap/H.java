@@ -400,9 +400,17 @@ public class H {
     }
 
     public static double svgReadDouble(String s, double k) {
-        if (s.endsWith("%"))
-            return Double.parseDouble(s.substring(0, s.length() - 2)) * k / 100.0;
+        s = s.trim();
+        if (s.endsWith("%")) {
+            return Double.parseDouble(s.substring(0, s.length() - 1)) * k / 100.0;
+        }
+        // remove trailing unit identifiers such as px or pt
+        s = s.replaceAll("[a-zA-Z]+$", "");
         return Double.parseDouble(s);
+    }
+
+    public static int svgReadInt(String s) {
+        return (int) Math.round(svgReadDouble(s, 1));
     }
 
     @Deprecated
@@ -464,13 +472,13 @@ public class H {
         public SVGBasicInfo(XmlReader.Element element) {
             try {
                 String[] viewbox = H.getAttribute(element, "viewBox").split(" ");
-                x_min = Integer.parseInt(viewbox[0]);
-                y_min = Integer.parseInt(viewbox[1]);
-                width = Integer.parseInt(viewbox[2]);
-                height = Integer.parseInt(viewbox[3]);
-            } catch (GdxRuntimeException | NullPointerException ignored) {
-                width = Integer.parseInt(H.getAttribute(element, "width"));
-                height = Integer.parseInt(H.getAttribute(element, "height"));
+                x_min = svgReadInt(viewbox[0]);
+                y_min = svgReadInt(viewbox[1]);
+                width = svgReadInt(viewbox[2]);
+                height = svgReadInt(viewbox[3]);
+            } catch (GdxRuntimeException | NullPointerException | NumberFormatException ignored) {
+                width = svgReadInt(H.getAttribute(element, "width"));
+                height = svgReadInt(H.getAttribute(element, "height"));
             }
             fill = H.svgReadColor(element, "fill");
             stroke = H.svgReadColor(element, "stroke");
