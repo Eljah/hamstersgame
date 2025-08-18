@@ -24,7 +24,7 @@ public class H {
 
     public static LinkedHashMap<String, Color> colorMap = new LinkedHashMap<>(150);
 
-    static AsyncExecutor asyncExecutor = new AsyncExecutor(Runtime.getRuntime().availableProcessors());
+    static AsyncExecutor asyncExecutor = new AsyncExecutor(1);
 
     static {
         colorMap.put("aliceblue", color8BitsToFloat(240, 248, 255));
