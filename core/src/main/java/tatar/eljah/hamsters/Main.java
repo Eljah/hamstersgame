@@ -37,6 +37,8 @@ public class Main extends ApplicationAdapter {
     private int hamsterScore;
     private int gradeScore;
     private OnscreenControlRenderer controlRenderer;
+    private int framesRendered;
+    private static final boolean AUTO_EXIT = Boolean.parseBoolean(System.getProperty("headless", "false"));
 
     @Override
     public void create() {
@@ -245,8 +247,12 @@ public class Main extends ApplicationAdapter {
                         hamster.y -= intersection.height;
                     } else {
                         hamster.y += intersection.height;
-                    }
-                }
+        }
+
+        if (AUTO_EXIT && ++framesRendered > 2) {
+            Gdx.app.exit();
+        }
+    }
             }
 
             if (Intersector.intersectRectangles(grade, block, intersection)) {
