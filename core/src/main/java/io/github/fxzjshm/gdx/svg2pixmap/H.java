@@ -482,7 +482,11 @@ public class H {
             }
             fill = H.svgReadColor(element, "fill");
             stroke = H.svgReadColor(element, "stroke");
-            strokeWidth = H.svgReadDouble(H.getAttribute(element, "stroke-width"), Math.sqrt(width * width + height * height));
+            try {
+                strokeWidth = H.svgReadDouble(H.getAttribute(element, "stroke-width"), Math.sqrt(width * width + height * height));
+            } catch (GdxRuntimeException | NullPointerException | NumberFormatException ignored) {
+                strokeWidth = 0;
+            }
         }
     }
 

@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.StringTokenizer;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class Svg2Pixmap {
     /**
@@ -26,6 +28,68 @@ public class Svg2Pixmap {
     public static int generateScale = 2;
 
     public static Color defaultColor = Color.BLACK;
+
+    private static class Transform {
+        float sx = 1f, sy = 1f, tx = 0f, ty = 0f;
+    }
+
+    private static Transform parseTransform(String transform) {
+        Transform t = new Transform();
+        if (transform == null) return t;
+        Matcher m = Pattern.compile("(\\w+)\\(([^)]+)\\)").matcher(transform);
+        List<String> types = new ArrayList<>();
+        List<String[]> params = new ArrayList<>();
+        while (m.find()) {
+            types.add(m.group(1));
+            params.add(m.group(2).trim().split("[,\\s]+"));
+        }
+        for (int i = types.size() - 1; i >= 0; i--) {
+            String type = types.get(i);
+            String[] p = params.get(i);
+            if ("scale".equals(type)) {
+                float sx = Float.parseFloat(p[0]);
+                float sy = p.length > 1 ? Float.parseFloat(p[1]) : sx;
+                t.sx *= sx;
+                t.sy *= sy;
+                t.tx *= sx;
+                t.ty *= sy;
+            } else if ("translate".equals(type)) {
+                float tx = Float.parseFloat(p[0]);
+                float ty = p.length > 1 ? Float.parseFloat(p[1]) : 0f;
+                t.tx += tx;
+                t.ty += ty;
+            }
+        }
+        return t;
+    }
+
+    private static void drawElement(XmlReader.Element element, Pixmap pixmap, float sx, float sy, float tx, float ty) {
+        Transform t = parseTransform(element.getAttribute("transform", null));
+        float nsx = sx * t.sx;
+        float nsy = sy * t.sy;
+        float ntx = sx * t.tx + tx;
+        float nty = sy * t.ty + ty;
+        for (int i = 0; i < element.getChildCount(); i++) {
+            XmlReader.Element child = element.getChild(i);
+            String name = child.getName();
+            switch (name) {
+                case "path":
+                    path(child, pixmap, nsx, nsy, ntx, nty);
+                    break;
+                case "circle":
+                    circle(child, pixmap, nsx, nsy, ntx, nty);
+                    break;
+                case "ellipse":
+                    ellipse(child, pixmap, nsx, nsy, ntx, nty);
+                    break;
+                case "g":
+                    drawElement(child, pixmap, nsx, nsy, ntx, nty);
+                    break;
+                default:
+                    Gdx.app.error("svg2PixmapDirectDraw", "Unsupported element " + name);
+            }
+        }
+    }
 
     /**
      * Convert a SVG {@code <path />} element into a {@link Pixmap}.
@@ -40,17 +104,19 @@ public class Svg2Pixmap {
      * @param pixmap      the pixmap to draw the path in.
      * @return Drawn pixmap.
      */
-    public static Pixmap path2Pixmap(int width, int height, String d, Color fill, Color stroke, double strokeWidth, Pixmap pixmap) {
+    public static Pixmap path2Pixmap(int width, int height, String d, Color fill, Color stroke, double strokeWidth, Pixmap pixmap, float sx, float sy, float tx, float ty) {
         checkGWT();
 
         StringTokenizer stringTokenizer = new StringTokenizer(H.splitMixedTokens(d));
         int strokeRadius = (int) Math.round(strokeWidth * Math.sqrt(1.0 * (pixmap.getWidth() * pixmap.getHeight()) / (width * height)) / 2);
 
-        Vector2 currentPosition = new Vector2(0, 0);// Current position. Used by commands.
-        Vector2 initialPoint = new Vector2(0, 0);// Current position. Used by command 'M'.
+        Vector2 currentPosition = new Vector2(0, 0);// Current position in pixmap.
+        Vector2 initialPoint = new Vector2(0, 0);// Used by command 'M'.
+        Vector2 currentOrig = new Vector2(0, 0); // Current position in original coordinates.
+        Vector2 initialOrig = new Vector2(0, 0);
         Vector2 lastCPoint = null; // Last control point of last 'C' or 'S' command.
         Vector2 lastQPoint = null; // Last control point of last 'Q' or 'T' command.
-        boolean[][] border = new boolean[pixmap.getWidth()][pixmap.getHeight()]; // int[][] to save border position, assuming initial value are all false
+        boolean[][] border = new boolean[pixmap.getWidth()][pixmap.getHeight()];
 
         char lastCommand = 0; // Last command.
         LinkedList<String> params = new LinkedList<String>(); // Real parameters.
@@ -65,15 +131,13 @@ public class Svg2Pixmap {
                 break;
             }
 
-            if (1 == tmp.length() && Character.isLetter(tmp.charAt(0))/* That is, tmp is a command.*/) {
+            if (1 == tmp.length() && Character.isLetter(tmp.charAt(0))) {
                 lastCommand = command = tmp.charAt(0);
             } else {
-                // tmp is not a command.
                 if (lastCommand != 0) {
                     command = lastCommand;
-                    // tmp is a parameter of last command.
                     params.add(tmp);
-                    paramAmount--; //Have loaded one.
+                    paramAmount--;
                 } else throw new IllegalArgumentException("No command at the beginning ?");
             }
             paramAmount += H.getParamAmount(command);
@@ -81,49 +145,88 @@ public class Svg2Pixmap {
                 params.add(stringTokenizer.nextToken());
             }
 
-            // convert relative positions to absolute positions
-            H.r2a(command, params, new Vector2(currentPosition.x / pixmap.getWidth() * width, currentPosition.y / pixmap.getHeight() * height));
+            // convert relative positions to absolute positions using original coordinates
+            H.r2a(command, params, new Vector2(currentOrig.x, currentOrig.y));
 
             char newCommand = Character.toUpperCase(command);
-            if (newCommand == 'M') {
-                initialPoint.x = currentPosition.x = (Float.parseFloat(params.get(0))) / width * pixmap.getWidth();
-                initialPoint.y = currentPosition.y = (Float.parseFloat(params.get(1))) / height * pixmap.getHeight();
-            }
-            if (newCommand == 'Z') {
-                H.drawCurve(pixmap, new Vector2[]{currentPosition, initialPoint}, stroke, strokeRadius, border);
-            }
-            if (newCommand == 'L') {
-                float x2 = Float.parseFloat(params.get(0)) / width * pixmap.getWidth(), y2 = Float.parseFloat(params.get(1)) / height * pixmap.getHeight();
-                H.drawCurve(pixmap, new Vector2[]{currentPosition, new Vector2(x2, y2)}, stroke, strokeRadius, border);
 
-                currentPosition.x = x2;
-                currentPosition.y = y2;
+            float lastOrigX = currentOrig.x, lastOrigY = currentOrig.y;
+            switch (newCommand) {
+                case 'M':
+                case 'L':
+                case 'T':
+                    lastOrigX = Float.parseFloat(params.get(params.size() - 2));
+                    lastOrigY = Float.parseFloat(params.get(params.size() - 1));
+                    break;
+                case 'H':
+                    lastOrigX = Float.parseFloat(params.get(params.size() - 1));
+                    break;
+                case 'V':
+                    lastOrigY = Float.parseFloat(params.get(params.size() - 1));
+                    break;
+                case 'C':
+                    lastOrigX = Float.parseFloat(params.get(4));
+                    lastOrigY = Float.parseFloat(params.get(5));
+                    break;
+                case 'S':
+                case 'Q':
+                    lastOrigX = Float.parseFloat(params.get(2));
+                    lastOrigY = Float.parseFloat(params.get(3));
+                    break;
+                case 'A':
+                    lastOrigX = Float.parseFloat(params.get(5));
+                    lastOrigY = Float.parseFloat(params.get(6));
+                    break;
+                case 'Z':
+                    lastOrigX = initialOrig.x;
+                    lastOrigY = initialOrig.y;
+                    break;
             }
-            if (newCommand == 'H') {
+
+            applyTransform(newCommand, params, sx, sy, tx, ty);
+
+            if (newCommand == 'M') {
+                initialPoint.x = currentPosition.x = Float.parseFloat(params.get(0)) / width * pixmap.getWidth();
+                initialPoint.y = currentPosition.y = Float.parseFloat(params.get(1)) / height * pixmap.getHeight();
+                initialOrig.set(lastOrigX, lastOrigY);
+                currentOrig.set(lastOrigX, lastOrigY);
+            } else if (newCommand == 'Z') {
+                H.drawCurve(pixmap, new Vector2[]{currentPosition, initialPoint}, stroke, strokeRadius, border);
+                currentPosition.x = initialPoint.x;
+                currentPosition.y = initialPoint.y;
+                currentOrig.set(lastOrigX, lastOrigY);
+            } else if (newCommand == 'L') {
+                float x2 = Float.parseFloat(params.get(0)) / width * pixmap.getWidth();
+                float y2 = Float.parseFloat(params.get(1)) / height * pixmap.getHeight();
+                H.drawCurve(pixmap, new Vector2[]{currentPosition, new Vector2(x2, y2)}, stroke, strokeRadius, border);
+                currentPosition.set(x2, y2);
+                currentOrig.set(lastOrigX, lastOrigY);
+            } else if (newCommand == 'H') {
                 float x2 = Float.parseFloat(params.get(0)) / width * pixmap.getWidth();
                 H.drawCurve(pixmap, new Vector2[]{currentPosition, new Vector2(x2, currentPosition.y)}, stroke, strokeRadius, border);
-
                 currentPosition.x = x2;
-            }
-            if (newCommand == 'V') {
+                currentOrig.set(lastOrigX, lastOrigY);
+            } else if (newCommand == 'V') {
                 float y2 = Float.parseFloat(params.get(0)) / height * pixmap.getHeight();
                 H.drawCurve(pixmap, new Vector2[]{currentPosition, new Vector2(currentPosition.x, y2)}, stroke, strokeRadius, border);
-
                 currentPosition.y = y2;
-            }
-            if (newCommand == 'C') {
-                float x1 = Float.parseFloat(params.get(0)) / width * pixmap.getWidth(), y1 = Float.parseFloat(params.get(1)) / height * pixmap.getHeight();
-                float x2 = Float.parseFloat(params.get(2)) / width * pixmap.getWidth(), y2 = Float.parseFloat(params.get(3)) / height * pixmap.getHeight();
-                float x = Float.parseFloat(params.get(4)) / width * pixmap.getWidth(), y = Float.parseFloat(params.get(5)) / height * pixmap.getHeight();
+                currentOrig.set(lastOrigX, lastOrigY);
+            } else if (newCommand == 'C') {
+                float x1 = Float.parseFloat(params.get(0)) / width * pixmap.getWidth();
+                float y1 = Float.parseFloat(params.get(1)) / height * pixmap.getHeight();
+                float x2 = Float.parseFloat(params.get(2)) / width * pixmap.getWidth();
+                float y2 = Float.parseFloat(params.get(3)) / height * pixmap.getHeight();
+                float x = Float.parseFloat(params.get(4)) / width * pixmap.getWidth();
+                float y = Float.parseFloat(params.get(5)) / height * pixmap.getHeight();
                 lastCPoint = new Vector2(x2, y2);
                 H.drawCurve(pixmap, new Vector2[]{currentPosition, new Vector2(x1, y1), lastCPoint, new Vector2(x, y)}, stroke, strokeRadius, border);
-
-                currentPosition.x = x;
-                currentPosition.y = y;
-            }
-            if (newCommand == 'S') {
-                float x2 = Float.parseFloat(params.get(0)) / width * pixmap.getWidth(), y2 = Float.parseFloat(params.get(1)) / height * pixmap.getHeight();
-                float x = Float.parseFloat(params.get(2)) / width * pixmap.getWidth(), y = Float.parseFloat(params.get(3)) / height * pixmap.getHeight();
+                currentPosition.set(x, y);
+                currentOrig.set(lastOrigX, lastOrigY);
+            } else if (newCommand == 'S') {
+                float x2 = Float.parseFloat(params.get(0)) / width * pixmap.getWidth();
+                float y2 = Float.parseFloat(params.get(1)) / height * pixmap.getHeight();
+                float x = Float.parseFloat(params.get(2)) / width * pixmap.getWidth();
+                float y = Float.parseFloat(params.get(3)) / height * pixmap.getHeight();
                 float x1, y1;
                 if (lastCPoint != null) {
                     x1 = 2 * currentPosition.x - lastCPoint.x;
@@ -134,21 +237,20 @@ public class Svg2Pixmap {
                 }
                 lastCPoint = new Vector2(x2, y2);
                 H.drawCurve(pixmap, new Vector2[]{currentPosition, new Vector2(x1, y1), lastCPoint, new Vector2(x, y)}, stroke, strokeRadius, border);
-
-                currentPosition.x = x;
-                currentPosition.y = y;
-            }
-            if (newCommand == 'Q') {
-                float x1 = Float.parseFloat(params.get(0)) / width * pixmap.getWidth(), y1 = Float.parseFloat(params.get(1)) / height * pixmap.getHeight();
-                float x = Float.parseFloat(params.get(2)) / width * pixmap.getWidth(), y = Float.parseFloat(params.get(3)) / height * pixmap.getHeight();
+                currentPosition.set(x, y);
+                currentOrig.set(lastOrigX, lastOrigY);
+            } else if (newCommand == 'Q') {
+                float x1 = Float.parseFloat(params.get(0)) / width * pixmap.getWidth();
+                float y1 = Float.parseFloat(params.get(1)) / height * pixmap.getHeight();
+                float x = Float.parseFloat(params.get(2)) / width * pixmap.getWidth();
+                float y = Float.parseFloat(params.get(3)) / height * pixmap.getHeight();
                 lastQPoint = new Vector2(x1, y1);
                 H.drawCurve(pixmap, new Vector2[]{currentPosition, lastQPoint, new Vector2(x, y)}, stroke, strokeRadius, border);
-
-                currentPosition.x = x;
-                currentPosition.y = y;
-            }
-            if (newCommand == 'T') {
-                float x = Float.parseFloat(params.get(0)) / width * pixmap.getWidth(), y = Float.parseFloat(params.get(1)) / height * pixmap.getHeight();
+                currentPosition.set(x, y);
+                currentOrig.set(lastOrigX, lastOrigY);
+            } else if (newCommand == 'T') {
+                float x = Float.parseFloat(params.get(0)) / width * pixmap.getWidth();
+                float y = Float.parseFloat(params.get(1)) / height * pixmap.getHeight();
                 float x1, y1;
                 if (lastQPoint != null) {
                     x1 = 2 * currentPosition.x - lastQPoint.x;
@@ -159,25 +261,18 @@ public class Svg2Pixmap {
                 }
                 lastQPoint = new Vector2(x1, y1);
                 H.drawCurve(pixmap, new Vector2[]{currentPosition, lastQPoint, new Vector2(x, y)}, stroke, strokeRadius, border);
-
-                currentPosition.x = x;
-                currentPosition.y = y;
-            }
-            if (newCommand == 'A') {
-                float rx = Float.parseFloat(params.get(0)) / width * pixmap.getWidth(),
-                        ry = Float.parseFloat(params.get(1)) / height * pixmap.getHeight(),
-                        x_axis_rotation = Float.parseFloat(params.get(2)),
-                        x = Float.parseFloat(params.get(5)) / width * pixmap.getWidth(),
-                        y = Float.parseFloat(params.get(6)) / height * pixmap.getHeight();
-                int large_arc_flag = Math.abs(Integer.parseInt(params.get(3))),
-                        sweep_flag = Math.abs(Integer.parseInt(params.get(4)));
+                currentPosition.set(x, y);
+                currentOrig.set(lastOrigX, lastOrigY);
+            } else if (newCommand == 'A') {
+                float rx = Float.parseFloat(params.get(0)) / width * pixmap.getWidth();
+                float ry = Float.parseFloat(params.get(1)) / height * pixmap.getHeight();
+                float x_axis_rotation = Float.parseFloat(params.get(2));
+                float x = Float.parseFloat(params.get(5)) / width * pixmap.getWidth();
+                float y = Float.parseFloat(params.get(6)) / height * pixmap.getHeight();
+                int large_arc_flag = Math.abs(Integer.parseInt(params.get(3)));
+                int sweep_flag = Math.abs(Integer.parseInt(params.get(4)));
                 List<Vector2[]> curves = SvgArcToCubicBezier.arcToBezier(currentPosition.x, currentPosition.y, x, y, rx, ry, x_axis_rotation, large_arc_flag, sweep_flag);
                 for (Vector2[] curve : curves) {
-                    /*
-                    String cmd = "M " + currentPosition.x + " " + currentPosition.y + " " +
-                            "C " + curve[0].x + " " + curve[0].y + " " + curve[1].x + " " + curve[1].y + " " + curve[2].x + " " + curve[2].y + " ";
-                    path2Pixmap(pixmap.getWidth(), pixmap.getHeight(), cmd, fill, stroke, strokeRadius, pixmap);
-                    */
                     ArrayList<Vector2> points = new ArrayList<>(4);
                     points.add(currentPosition);
                     points.addAll(Arrays.asList(curve));
@@ -185,9 +280,9 @@ public class Svg2Pixmap {
                     currentPosition.x = curve[2].x;
                     currentPosition.y = curve[2].y;
                 }
-
                 currentPosition.x = x;
                 currentPosition.y = y;
+                currentOrig.set(lastOrigX, lastOrigY);
             }
 
             // Clear useless control points
@@ -202,6 +297,58 @@ public class Svg2Pixmap {
         }
 
         return pixmap;
+    }
+
+    public static Pixmap path2Pixmap(int width, int height, String d, Color fill, Color stroke, double strokeWidth, Pixmap pixmap) {
+        return path2Pixmap(width, height, d, fill, stroke, strokeWidth, pixmap, 1f, 1f, 0f, 0f);
+    }
+
+    private static void applyTransform(char command, List<String> params, float sx, float sy, float tx, float ty) {
+        switch (command) {
+            case 'M':
+            case 'L':
+            case 'T':
+                for (int i = 0; i < params.size(); i += 2) {
+                    float x = Float.parseFloat(params.get(i));
+                    float y = Float.parseFloat(params.get(i + 1));
+                    params.set(i, Float.toString(sx * x + tx));
+                    params.set(i + 1, Float.toString(sy * y + ty));
+                }
+                break;
+            case 'H':
+                for (int i = 0; i < params.size(); i++) {
+                    float x = Float.parseFloat(params.get(i));
+                    params.set(i, Float.toString(sx * x + tx));
+                }
+                break;
+            case 'V':
+                for (int i = 0; i < params.size(); i++) {
+                    float y = Float.parseFloat(params.get(i));
+                    params.set(i, Float.toString(sy * y + ty));
+                }
+                break;
+            case 'C':
+            case 'S':
+            case 'Q':
+                for (int i = 0; i < params.size(); i += 2) {
+                    float x = Float.parseFloat(params.get(i));
+                    float y = Float.parseFloat(params.get(i + 1));
+                    params.set(i, Float.toString(sx * x + tx));
+                    params.set(i + 1, Float.toString(sy * y + ty));
+                }
+                break;
+            case 'A':
+                float rx = Float.parseFloat(params.get(0));
+                float ry = Float.parseFloat(params.get(1));
+                params.set(0, Float.toString(Math.abs(sx) * rx));
+                params.set(1, Float.toString(Math.abs(sy) * ry));
+                float x = Float.parseFloat(params.get(5));
+                float y = Float.parseFloat(params.get(6));
+                params.set(5, Float.toString(sx * x + tx));
+                params.set(6, Float.toString(sy * y + ty));
+                break;
+            default:
+        }
     }
 
     /**
@@ -284,26 +431,10 @@ public class Svg2Pixmap {
         XmlReader.Element root = reader.parse(fileContent);
 
         Pixmap pixmap = new Pixmap(width, height, Pixmap.Format.RGBA8888);
-        for (int i = 0; i < root.getChildCount(); i++) {
-            XmlReader.Element child = root.getChild(i);
-            try {
-                String name = child.getName();
-                switch (name) {
-                    case "path":
-                        path(child, pixmap);
-                        break;
-                    case "circle":
-                        circle(child, pixmap);
-                        break;
-                    case "ellipse":
-                        ellipse(child, pixmap);
-                        break;
-                    default:
-                        Gdx.app.error("svg2PixmapDirectDraw", "Unsupported element " + name);
-                }
-            } catch (Exception e) { //TODO Dangerous here !!!
-                Gdx.app.debug("Svg2Pixmap", "File content:\n" + fileContent + "\nError stacktrace: ", e);
-            }
+        try {
+            drawElement(root, pixmap, 1f, 1f, 0f, 0f);
+        } catch (Exception e) { //TODO Dangerous here !!!
+            Gdx.app.debug("Svg2Pixmap", "File content:\n" + fileContent + "\nError stacktrace: ", e);
         }
         return pixmap;
     }
@@ -316,14 +447,18 @@ public class Svg2Pixmap {
         return svg2Pixmap(fileContent, width, height);
     }
 
-    public static void path(XmlReader.Element element, Pixmap pixmap) {
+    public static void path(XmlReader.Element element, Pixmap pixmap, float sx, float sy, float tx, float ty) {
         H.SVGBasicInfo info = new H.SVGBasicInfo(element);
         String d = H.getAttribute(element, "d");
 
-        path2Pixmap(info.width, info.height, d, info.fill, info.stroke, info.strokeWidth, pixmap);
+        path2Pixmap(info.width, info.height, d, info.fill, info.stroke, info.strokeWidth, pixmap, sx, sy, tx, ty);
     }
 
-    public static void circle(XmlReader.Element element, Pixmap pixmap) {
+    public static void path(XmlReader.Element element, Pixmap pixmap) {
+        path(element, pixmap, 1f, 1f, 0f, 0f);
+    }
+
+    public static void circle(XmlReader.Element element, Pixmap pixmap, float sx, float sy, float tx, float ty) {
         H.SVGBasicInfo info = new H.SVGBasicInfo(element);
         double cx = Double.parseDouble(H.getAttribute(element, "cx")),
                 cy = Double.parseDouble(H.getAttribute(element, "cy")),
@@ -332,10 +467,14 @@ public class Svg2Pixmap {
         String d = "M " + (cx - r) + " " + cy + " " +
                 "A " + r + " " + r + " 0 1 1 " + (cx + r) + " " + cy + " " +
                 "A " + r + " " + r + " 0 1 1 " + (cx - r) + " " + cy + " ";
-        path2Pixmap(info.width, info.height, d, info.fill, info.stroke, info.strokeWidth, pixmap);
+        path2Pixmap(info.width, info.height, d, info.fill, info.stroke, info.strokeWidth, pixmap, sx, sy, tx, ty);
     }
 
-    public static void ellipse(XmlReader.Element element, Pixmap pixmap) {
+    public static void circle(XmlReader.Element element, Pixmap pixmap) {
+        circle(element, pixmap, 1f, 1f, 0f, 0f);
+    }
+
+    public static void ellipse(XmlReader.Element element, Pixmap pixmap, float sx, float sy, float tx, float ty) {
         H.SVGBasicInfo info = new H.SVGBasicInfo(element);
         double cx = Double.parseDouble(H.getAttribute(element, "cx")),
                 cy = Double.parseDouble(H.getAttribute(element, "cy")),
@@ -345,7 +484,11 @@ public class Svg2Pixmap {
         String d = "M " + (cx - rx) + " " + cy + " " +
                 "A " + rx + " " + ry + " 0 1 1 " + (cx + rx) + " " + cy + " " +
                 "A " + rx + " " + ry + " 0 1 1 " + (cx - rx) + " " + cy + " ";
-        path2Pixmap(info.width, info.height, d, info.fill, info.stroke, info.strokeWidth, pixmap);
+        path2Pixmap(info.width, info.height, d, info.fill, info.stroke, info.strokeWidth, pixmap, sx, sy, tx, ty);
+    }
+
+    public static void ellipse(XmlReader.Element element, Pixmap pixmap) {
+        ellipse(element, pixmap, 1f, 1f, 0f, 0f);
     }
 
     protected static void checkGWT() {
