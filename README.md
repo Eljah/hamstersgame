@@ -37,3 +37,13 @@ Useful Gradle tasks and flags:
 
 Note that most tasks that are not specific to a single project can be run with `name:` prefix, where the `name` should be replaced with the ID of a specific project.
 For example, `core:clean` removes `build` folder only from the `core` project.
+
+## Tools
+
+The `tools` module provides helper utilities. To convert all PNG files in `assets/` into pen-style SVGs, run:
+
+```bash
+./gradlew :tools:run --args blue
+```
+
+Replace `blue` with `red` to use a red pen. The converted files are written to `build/vectorized` alongside generated SVGs.
