@@ -82,6 +82,9 @@ public class Svg2Pixmap {
                 case "ellipse":
                     ellipse(child, pixmap, nsx, nsy, ntx, nty);
                     break;
+                case "rect":
+                    rect(child, pixmap, nsx, nsy, ntx, nty);
+                    break;
                 case "g":
                     drawElement(child, pixmap, nsx, nsy, ntx, nty);
                     break;
@@ -456,6 +459,42 @@ public class Svg2Pixmap {
 
     public static void path(XmlReader.Element element, Pixmap pixmap) {
         path(element, pixmap, 1f, 1f, 0f, 0f);
+    }
+
+    public static void rect(XmlReader.Element element, Pixmap pixmap, float sx, float sy, float tx, float ty) {
+        H.SVGBasicInfo info = new H.SVGBasicInfo(element);
+        double x = Double.parseDouble(element.getAttribute("x", "0")),
+                y = Double.parseDouble(element.getAttribute("y", "0")),
+                w = Double.parseDouble(H.getAttribute(element, "width")),
+                h = Double.parseDouble(H.getAttribute(element, "height")),
+                rx = Double.parseDouble(element.getAttribute("rx", "0")),
+                ry = Double.parseDouble(element.getAttribute("ry", "0"));
+        if (rx == 0 && ry > 0) rx = ry;
+        if (ry == 0 && rx > 0) ry = rx;
+        rx = Math.min(rx, w / 2.0);
+        ry = Math.min(ry, h / 2.0);
+        String d;
+        if (rx == 0 && ry == 0) {
+            d = "M " + x + " " + y + " " +
+                "L " + (x + w) + " " + y + " " +
+                "L " + (x + w) + " " + (y + h) + " " +
+                "L " + x + " " + (y + h) + " Z";
+        } else {
+            d = "M " + (x + rx) + " " + y + " " +
+                "L " + (x + w - rx) + " " + y + " " +
+                "A " + rx + " " + ry + " 0 0 1 " + (x + w) + " " + (y + ry) + " " +
+                "L " + (x + w) + " " + (y + h - ry) + " " +
+                "A " + rx + " " + ry + " 0 0 1 " + (x + w - rx) + " " + (y + h) + " " +
+                "L " + (x + rx) + " " + (y + h) + " " +
+                "A " + rx + " " + ry + " 0 0 1 " + x + " " + (y + h - ry) + " " +
+                "L " + x + " " + (y + ry) + " " +
+                "A " + rx + " " + ry + " 0 0 1 " + (x + rx) + " " + y + " Z";
+        }
+        path2Pixmap(info.width, info.height, d, info.fill, info.stroke, info.strokeWidth, pixmap, sx, sy, tx, ty);
+    }
+
+    public static void rect(XmlReader.Element element, Pixmap pixmap) {
+        rect(element, pixmap, 1f, 1f, 0f, 0f);
     }
 
     public static void circle(XmlReader.Element element, Pixmap pixmap, float sx, float sy, float tx, float ty) {
