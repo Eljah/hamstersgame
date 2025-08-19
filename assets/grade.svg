@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" shape-rendering="crispEdges">
 <defs>
   <radialGradient id="redPen" cx="0.5" cy="0.5" r="0.5">
-    <stop offset="0%" stop-color="#cc0000" stop-opacity="1"/>
-    <stop offset="100%" stop-color="#cc0000" stop-opacity="0.2"/>
+    <stop offset="0%" stop-color="#ff0000" stop-opacity="1"/>
+    <stop offset="100%" stop-color="#ff0000" stop-opacity="0.2"/>
   </radialGradient>
 </defs>
 <rect x="24" y="10" width="1" height="1" fill="url(#redPen)" />
