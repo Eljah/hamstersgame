@@ -485,7 +485,8 @@ public class H {
             try {
                 strokeWidth = H.svgReadDouble(H.getAttribute(element, "stroke-width"), Math.sqrt(width * width + height * height));
             } catch (GdxRuntimeException | NullPointerException | NumberFormatException ignored) {
-                strokeWidth = 0;
+                // fall back to a visible default so paths without explicit stroke-width remain noticeable
+                strokeWidth = Math.max(width, height) / 32.0;
             }
         }
     }
