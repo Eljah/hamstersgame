@@ -44,15 +44,18 @@ public class Main extends ApplicationAdapter {
     public void create() {
         batch = new SpriteBatch();
 
-        Pixmap hamsterPixmap = Svg2Pixmap.svg2Pixmap(Gdx.files.internal("hamster.svg").readString());
+        Pixmap hamsterPixmap = Svg2Pixmap.svg2Pixmap(
+                Gdx.files.internal("hamster_old.svg").readString(), 64, 64);
         hamsterTexture = new Texture(hamsterPixmap);
         hamsterPixmap.dispose();
 
-        Pixmap gradePixmap = Svg2Pixmap.svg2Pixmap(Gdx.files.internal("grade.svg").readString());
+        Pixmap gradePixmap = Svg2Pixmap.svg2Pixmap(
+                Gdx.files.internal("grade.svg").readString(), 64, 64);
         gradeTexture = new Texture(gradePixmap);
         gradePixmap.dispose();
 
-        Pixmap blockPixmap = Svg2Pixmap.svg2Pixmap(Gdx.files.internal("block.svg").readString());
+        Pixmap blockPixmap = Svg2Pixmap.svg2Pixmap(
+                Gdx.files.internal("block.svg").readString(), 64, 64);
         blockTexture = new Texture(blockPixmap);
         blockPixmap.dispose();
 
