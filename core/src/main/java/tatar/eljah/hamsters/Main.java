@@ -45,7 +45,7 @@ public class Main extends ApplicationAdapter {
         batch = new SpriteBatch();
 
         Pixmap hamsterPixmap = Svg2Pixmap.svg2Pixmap(
-                Gdx.files.internal("hamster_old.svg").readString(), 64, 64);
+                Gdx.files.internal("hamster.svg").readString(), 64, 64);
         hamsterTexture = new Texture(hamsterPixmap);
         hamsterPixmap.dispose();
 

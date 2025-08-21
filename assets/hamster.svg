@@ -5,8 +5,6 @@
     <stop offset="100%" stop-color="#0033cc" stop-opacity="0.2"/>
   </radialGradient>
 </defs>
-
-    <g transform="scale(0.128)">
 <rect x="205" y="38" width="1" height="1" fill="url(#bluePen)" />
 <rect x="206" y="38" width="1" height="1" fill="url(#bluePen)" />
 <rect x="207" y="38" width="1" height="1" fill="url(#bluePen)" />
@@ -16333,5 +16331,4 @@
 <rect x="280" y="432" width="1" height="1" fill="url(#bluePen)" />
 <rect x="282" y="432" width="1" height="1" fill="url(#bluePen)" />
 <rect x="284" y="432" width="1" height="1" fill="url(#bluePen)" />
-    </g>
 </svg>
