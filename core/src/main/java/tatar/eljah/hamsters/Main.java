@@ -3,16 +3,18 @@ package tatar.eljah.hamsters;
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
+import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
-import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.Pixmap;
+import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
+import com.badlogic.gdx.math.Intersector;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
-import com.badlogic.gdx.math.Intersector;
 import com.badlogic.gdx.utils.Array;
 import io.github.fxzjshm.gdx.svg2pixmap.Svg2Pixmap;
 
@@ -23,6 +25,7 @@ public class Main extends ApplicationAdapter {
     private Texture blockTexture;
     private Texture backgroundTexture;
     private BitmapFont font;
+    private ShapeRenderer shapeRenderer;
 
     private OrthographicCamera camera;
 
@@ -40,37 +43,53 @@ public class Main extends ApplicationAdapter {
     private int framesRendered;
     private static final boolean AUTO_EXIT = Boolean.parseBoolean(System.getProperty("headless", "false"));
 
+    private volatile boolean loading;
+    private volatile float loadingProgress;
+
     @Override
     public void create() {
         batch = new SpriteBatch();
-
-        Pixmap hamsterPixmap = Svg2Pixmap.svg2Pixmap(
-                Gdx.files.internal("hamster.svg").readString(), 64, 64);
-        hamsterTexture = new Texture(hamsterPixmap);
-        hamsterPixmap.dispose();
-
-        Pixmap gradePixmap = Svg2Pixmap.svg2Pixmap(
-                Gdx.files.internal("grade.svg").readString(), 64, 64);
-        gradeTexture = new Texture(gradePixmap);
-        gradePixmap.dispose();
-
-        Pixmap blockPixmap = Svg2Pixmap.svg2Pixmap(
-                Gdx.files.internal("block.svg").readString(), 64, 64);
-        blockTexture = new Texture(blockPixmap);
-        blockPixmap.dispose();
-
-        backgroundTexture = new Texture("liner.png");
         font = new BitmapFont();
+        shapeRenderer = new ShapeRenderer();
 
         camera = new OrthographicCamera();
         camera.setToOrtho(false, 800, 600);
 
-        controlRenderer = new OnscreenControlRenderer();
-
         hamsterScore = 0;
         gradeScore = 0;
 
-        resetGame();
+        loading = true;
+        loadingProgress = 0f;
+
+        new Thread(() -> {
+            Pixmap hamsterPixmap = Svg2Pixmap.svg2Pixmap(
+                    Gdx.files.internal("hamster.svg").readString(), 64, 64);
+            loadingProgress = 1f / 3f;
+            Gdx.app.postRunnable(() -> {
+                hamsterTexture = new Texture(hamsterPixmap);
+                hamsterPixmap.dispose();
+            });
+
+            Pixmap gradePixmap = Svg2Pixmap.svg2Pixmap(
+                    Gdx.files.internal("grade.svg").readString(), 64, 64);
+            loadingProgress = 2f / 3f;
+            Gdx.app.postRunnable(() -> {
+                gradeTexture = new Texture(gradePixmap);
+                gradePixmap.dispose();
+            });
+
+            Pixmap blockPixmap = Svg2Pixmap.svg2Pixmap(
+                    Gdx.files.internal("block.svg").readString(), 64, 64);
+            loadingProgress = 1f;
+            Gdx.app.postRunnable(() -> {
+                blockTexture = new Texture(blockPixmap);
+                blockPixmap.dispose();
+                backgroundTexture = new Texture("liner.png");
+                controlRenderer = new OnscreenControlRenderer();
+                resetGame();
+                loading = false;
+            });
+        }).start();
     }
 
     static final int GRID_WIDTH = 800 / 64;
@@ -157,6 +176,20 @@ public class Main extends ApplicationAdapter {
 
     @Override
     public void render() {
+        if (loading) {
+            Gdx.gl.glClearColor(0, 0, 0, 1);
+            Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
+
+            shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+            shapeRenderer.setColor(Color.WHITE);
+            shapeRenderer.rect(100, 300, 600 * loadingProgress, 20);
+            shapeRenderer.end();
+
+            batch.begin();
+            font.draw(batch, "Loading...", 350, 340);
+            batch.end();
+            return;
+        }
         if (gameOver) {
             Gdx.gl.glClearColor(1, 0, 0, 1);
             Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
@@ -297,12 +330,13 @@ public class Main extends ApplicationAdapter {
 
     @Override
     public void dispose() {
-        batch.dispose();
-        hamsterTexture.dispose();
-        gradeTexture.dispose();
-        blockTexture.dispose();
-        backgroundTexture.dispose();
-        font.dispose();
-        controlRenderer.dispose();
+        if (batch != null) batch.dispose();
+        if (hamsterTexture != null) hamsterTexture.dispose();
+        if (gradeTexture != null) gradeTexture.dispose();
+        if (blockTexture != null) blockTexture.dispose();
+        if (backgroundTexture != null) backgroundTexture.dispose();
+        if (font != null) font.dispose();
+        if (shapeRenderer != null) shapeRenderer.dispose();
+        if (controlRenderer != null) controlRenderer.dispose();
     }
 }
