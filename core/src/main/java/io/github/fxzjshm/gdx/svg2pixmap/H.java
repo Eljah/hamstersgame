@@ -434,9 +434,12 @@ public class H {
                 return Color.CLEAR;
             }
             if (color.startsWith("#")) return Color.valueOf(color.replace("#", ""));
-            return colorMap.get(color);
-        } catch (NullPointerException | GdxRuntimeException ignored) {
+            Color named = colorMap.get(color);
+            if (named != null) return named;
             return defaultColor;
+        } catch (NullPointerException | GdxRuntimeException ignored) {
+            // missing attribute should mean "no color" instead of defaulting to black
+            return Color.CLEAR;
         }
     }
 
@@ -482,11 +485,15 @@ public class H {
             }
             fill = H.svgReadColor(element, "fill");
             stroke = H.svgReadColor(element, "stroke");
-            try {
-                strokeWidth = H.svgReadDouble(H.getAttribute(element, "stroke-width"), Math.sqrt(width * width + height * height));
-            } catch (GdxRuntimeException | NullPointerException | NumberFormatException ignored) {
-                // fall back to a visible default so paths without explicit stroke-width remain noticeable
-                strokeWidth = Math.max(width, height) / 32.0;
+            if (stroke == null || stroke.equals(Color.CLEAR)) {
+                strokeWidth = 0.0;
+            } else {
+                try {
+                    strokeWidth = H.svgReadDouble(H.getAttribute(element, "stroke-width"), Math.sqrt(width * width + height * height));
+                } catch (GdxRuntimeException | NullPointerException | NumberFormatException ignored) {
+                    // fall back to a visible default so paths without explicit stroke-width remain noticeable
+                    strokeWidth = Math.max(width, height) / 32.0;
+                }
             }
         }
     }
