@@ -364,6 +364,10 @@ public class Svg2Pixmap {
     public static Pixmap svg2Pixmap(String fileContent, int width, int height) {
         checkGWT();
 
+        // Avoid dimming tiny sprites by bypassing supersampling for 1x1 textures
+        if (width == 1 && height == 1) {
+            return svg2PixmapDirectDraw(fileContent, width, height);
+        }
         if (generateScale == 1) return svg2PixmapDirectDraw(fileContent, width, height);
 
         final int scaledWidth = width * generateScale, scaledHeight = height * generateScale,
