@@ -1,9 +1,16 @@
 block.png
+block.svg
 com/badlogic/gdx/utils/lsans-15.fnt
 com/badlogic/gdx/utils/lsans-15.png
 controls.png
 grade.png
-hamster.png
+grade.svg
+hamster.svg
+hamster2-removebg-preview.png
+hamster2.png
+hamster3.png
+hamster_old.png
+hamster_old.svg
 libgdx.png
 liner.png
 ui/font-list.fnt

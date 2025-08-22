@@ -47,6 +47,9 @@ run {
   workingDir = rootProject.file('assets').path
   setIgnoreExitValue(true)
 
+  if (project.hasProperty('headless')) {
+    jvmArgs "-Dheadless=${project.property('headless')}"
+  }
   if (os.contains('mac')) jvmArgs += "-XstartOnFirstThread"
 }
 

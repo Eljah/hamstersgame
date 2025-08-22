@@ -20,6 +20,7 @@
   <inherits name="com.badlogic.gdx.controllers" />
   <inherits name="com.badlogic.gdx.controllers.controllers-gwt" />
   <inherits name="com.badlogic.gdx.physics.box2d.box2d-gwt" />
+  <inherits name="io.github.fxzjshm.gdx.svg2pixmap.Svg2Pixmap" />
   <inherits name="tatar.eljah.hamsters.Main" />
 
   <!-- You must change this if you rename packages later, or rename GwtLauncher. -->
