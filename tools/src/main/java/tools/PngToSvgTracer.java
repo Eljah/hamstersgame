@@ -17,28 +17,29 @@ import java.awt.Color;
  * - Export SVG paths with stroke (no fills, no rect mosaics)
  *
  * Usage:
- *   java tools.PngToSvgTracer in.png out.svg [threshold=-1(Otsu)] [rdpEps=1.5] [tension=1.0] [minPath=6] [strokeWidth=2.0] [scale=1.0]
+ *   java tools.PngToSvgTracer in.png [out.svg] [threshold=128] [rdpEps=0.4] [tension=0.6]
+ *       [minPath=6] [strokeWidth=0.5] [scale=1.0]
  *
  * Example:
- *   java tools.PngToSvgTracer scan.png scan.svg -1 1.8 1.0 6 2.2 1.0
+ *   java tools.PngToSvgTracer hamster.png hamster_traced.svg 128 0.4 0.6 6 0.5 1.0
  */
 public class PngToSvgTracer {
 
     public static void main(String[] args) throws Exception {
-        if (args.length < 2) {
+        if (args.length < 1) {
             System.out.println("Usage:");
-            System.out.println("  java tools.PngToSvgTracer in.png out.svg [threshold=-1(Otsu)] [rdpEps=1.5] [tension=1.0] [minPath=6] [strokeWidth=2.0] [scale=1.0]");
+            System.out.println("  java tools.PngToSvgTracer in.png [out.svg] [threshold=128] [rdpEps=0.4] [tension=0.6] [minPath=6] [strokeWidth=0.5] [scale=1.0]");
             System.out.println("Example:");
-            System.out.println("  java tools.PngToSvgTracer hamster2_transparent.png hamster2.svg -1 1.8 1.0 6 2.2 1.0");
+            System.out.println("  java tools.PngToSvgTracer hamster.png hamster_traced.svg 128 0.4 0.6 6 0.5 1.0");
             return;
         }
         String inPath = args[0];
-        String outPath = args[1];
-        int threshold = args.length > 2 ? Integer.parseInt(args[2]) : -1;     // -1 = Otsu
-        double rdpEps = args.length > 3 ? Double.parseDouble(args[3]) : 1.5;  // упрощение в px
-        double tension = args.length > 4 ? Double.parseDouble(args[4]) : 1.0; // 1.0 — классический CR→Bezier
+        String outPath = args.length > 1 ? args[1] : defaultOutPath(inPath);
+        int threshold = args.length > 2 ? Integer.parseInt(args[2]) : 128;     // -1 = Otsu
+        double rdpEps = args.length > 3 ? Double.parseDouble(args[3]) : 0.4;  // упрощение в px
+        double tension = args.length > 4 ? Double.parseDouble(args[4]) : 0.6; // 1.0 — классический CR→Bezier
         int minPath = args.length > 5 ? Integer.parseInt(args[5]) : 6;        // минимальная длина полилинии (точек)
-        double strokeWidth = args.length > 6 ? Double.parseDouble(args[6]) : 2.0; // итоговая толщина штриха в SVG
+        double strokeWidth = args.length > 6 ? Double.parseDouble(args[6]) : 0.5; // итоговая толщина штриха в SVG
         double scale = args.length > 7 ? Double.parseDouble(args[7]) : 1.0;   // масштаб точек в SVG
 
         BufferedImage src = ImageIO.read(new File(inPath));
@@ -401,6 +402,12 @@ public class PngToSvgTracer {
     static int clamp(int v,int lo,int hi){ return Math.max(lo, Math.min(hi,v)); }
     static double clamp01(double v){ return Math.max(0.0, Math.min(1.0, v)); }
     static String fmt(double v){ return ((v==Math.rint(v))? String.valueOf((long)Math.rint(v)) : String.format(java.util.Locale.US,"%.3f",v)); }
+
+    static String defaultOutPath(String in){
+        int idx=in.lastIndexOf('.');
+        String base=(idx>=0)?in.substring(0,idx):in;
+        return base+"_traced.svg";
+    }
 
     // средний цвет чернил по бинарной маске (удобно для «ручки»)
     static String estimateInkColor(BufferedImage img, boolean[][] mask){
