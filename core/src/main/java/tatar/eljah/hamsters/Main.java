@@ -179,7 +179,7 @@ public class Main extends ApplicationAdapter {
         return false;
     }
 
-    static void applyBallpointEffect(Pixmap pixmap) {
+    public static void applyBallpointEffect(Pixmap pixmap) {
         int width = pixmap.getWidth();
         int height = pixmap.getHeight();
         int[][] dist = new int[width][height];
