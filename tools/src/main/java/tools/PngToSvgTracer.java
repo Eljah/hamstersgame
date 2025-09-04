@@ -17,28 +17,28 @@ import java.awt.Color;
  * - Export SVG paths with stroke (no fills, no rect mosaics)
  *
  * Usage:
- *   java tools.PngToSvgTracer in.png [out.svg] [threshold=128] [rdpEps=0.4] [tension=0.6]
- *       [minPath=6] [strokeWidth=0.5] [scale=1.0]
+ *   java tools.PngToSvgTracer in.png [out.svg] [threshold=128] [rdpEps=0.25] [tension=0.6]
+ *       [minPath=4] [strokeWidth=0.5] [scale=1.0]
  *
  * Example:
- *   java tools.PngToSvgTracer hamster.png hamster_traced.svg 128 0.4 0.6 6 0.5 1.0
+ *   java tools.PngToSvgTracer hamster.png hamster_traced.svg 128 0.25 0.6 4 0.5 1.0
  */
 public class PngToSvgTracer {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 1) {
             System.out.println("Usage:");
-            System.out.println("  java tools.PngToSvgTracer in.png [out.svg] [threshold=128] [rdpEps=0.4] [tension=0.6] [minPath=6] [strokeWidth=0.5] [scale=1.0]");
+            System.out.println("  java tools.PngToSvgTracer in.png [out.svg] [threshold=128] [rdpEps=0.25] [tension=0.6] [minPath=4] [strokeWidth=0.5] [scale=1.0]");
             System.out.println("Example:");
-            System.out.println("  java tools.PngToSvgTracer hamster.png hamster_traced.svg 128 0.4 0.6 6 0.5 1.0");
+            System.out.println("  java tools.PngToSvgTracer hamster.png hamster_traced.svg 128 0.25 0.6 4 0.5 1.0");
             return;
         }
         String inPath = args[0];
         String outPath = args.length > 1 ? args[1] : defaultOutPath(inPath);
         int threshold = args.length > 2 ? Integer.parseInt(args[2]) : 128;     // -1 = Otsu
-        double rdpEps = args.length > 3 ? Double.parseDouble(args[3]) : 0.4;  // упрощение в px
-        double tension = args.length > 4 ? Double.parseDouble(args[4]) : 0.6; // 1.0 — классический CR→Bezier
-        int minPath = args.length > 5 ? Integer.parseInt(args[5]) : 6;        // минимальная длина полилинии (точек)
+        double rdpEps = args.length > 3 ? Double.parseDouble(args[3]) : 0.25;  // упрощение в px
+        double tension = args.length > 4 ? Double.parseDouble(args[4]) : 0.6;  // 1.0 — классический CR→Bezier
+        int minPath = args.length > 5 ? Integer.parseInt(args[5]) : 4;        // минимальная длина полилинии (точек)
         double strokeWidth = args.length > 6 ? Double.parseDouble(args[6]) : 0.5; // итоговая толщина штриха в SVG
         double scale = args.length > 7 ? Double.parseDouble(args[7]) : 1.0;   // масштаб точек в SVG
 
@@ -59,7 +59,7 @@ public class PngToSvgTracer {
         // === 2) Threshold (Otsu by default) ===
         boolean[][] bin = threshold(ink, threshold);
 
-        // небольшая чистка: удалим одиночные пиксели/«пыль»
+        // небольшая чистка: удалим изолированные пиксели/«пыль»
         bin = despeckle(bin);
 
         // === 3) Skeletonize (Zhang–Suen) ===
@@ -176,7 +176,7 @@ public class PngToSvgTracer {
         return threshold;
     }
 
-    // удаление одиночных пикселей
+    // удаление изолированных пикселей
     static boolean[][] despeckle(boolean[][] a) {
         int H = a.length, W = a[0].length;
         boolean[][] out = copy(a);
@@ -186,7 +186,7 @@ public class PngToSvgTracer {
             if (!a[y][x]) continue;
             int n=0;
             for (int k=0;k<8;k++) if (a[y+dy[k]][x+dx[k]]) n++;
-            if (n<=1) out[y][x]=false; // одиночка
+            if (n==0) out[y][x]=false; // удаляем только полностью изолированные пиксели
         }
         return out;
     }
