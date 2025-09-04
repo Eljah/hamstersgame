@@ -68,6 +68,7 @@ public class Main extends ApplicationAdapter {
             hamsterSvg = hamsterSvg.replaceAll("stroke-width=\"[0-9.]+\"",
                     "stroke-width=\"" + strokeScale + "\"");
             Pixmap hamsterPixmap = Svg2Pixmap.svg2Pixmap(hamsterSvg, 256, 256);
+            applyBallpointEffect(hamsterPixmap);
             loadingProgress = 1f / 3f;
             Gdx.app.postRunnable(() -> {
                 hamsterTexture = new Texture(hamsterPixmap);
@@ -176,6 +177,67 @@ public class Main extends ApplicationAdapter {
             }
         }
         return false;
+    }
+
+    private static void applyBallpointEffect(Pixmap pixmap) {
+        int width = pixmap.getWidth();
+        int height = pixmap.getHeight();
+        int[][] dist = new int[width][height];
+        java.util.ArrayDeque<int[]> queue = new java.util.ArrayDeque<>();
+        Color color = new Color();
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                Color.rgba8888ToColor(color, pixmap.getPixel(x, y));
+                if (color.a == 0f) {
+                    dist[x][y] = 0;
+                    queue.add(new int[]{x, y});
+                } else {
+                    dist[x][y] = Integer.MAX_VALUE;
+                }
+            }
+        }
+
+        int[] dx = {-1, 1, 0, 0, -1, -1, 1, 1};
+        int[] dy = {0, 0, -1, 1, -1, 1, -1, 1};
+
+        while (!queue.isEmpty()) {
+            int[] p = queue.poll();
+            int x = p[0];
+            int y = p[1];
+            int d = dist[x][y];
+            for (int i = 0; i < 8; i++) {
+                int nx = x + dx[i];
+                int ny = y + dy[i];
+                if (nx >= 0 && nx < width && ny >= 0 && ny < height && dist[nx][ny] > d + 1) {
+                    dist[nx][ny] = d + 1;
+                    queue.add(new int[]{nx, ny});
+                }
+            }
+        }
+
+        int maxDist = 0;
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                Color.rgba8888ToColor(color, pixmap.getPixel(x, y));
+                if (color.a > 0f && dist[x][y] > maxDist) {
+                    maxDist = dist[x][y];
+                }
+            }
+        }
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int pixel = pixmap.getPixel(x, y);
+                Color.rgba8888ToColor(color, pixel);
+                if (color.a > 0f) {
+                    float factor = 1f - (float) dist[x][y] / (float) maxDist;
+                    factor = 0.2f + 0.8f * factor;
+                    color.a *= factor;
+                    pixmap.drawPixel(x, y, Color.rgba8888(color));
+                }
+            }
+        }
     }
 
 
