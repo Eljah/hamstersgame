@@ -68,6 +68,7 @@ public class Main extends ApplicationAdapter {
             hamsterSvg = hamsterSvg.replaceAll("stroke-width=\"[0-9.]+\"",
                     "stroke-width=\"" + strokeScale + "\"");
             Pixmap hamsterPixmap = Svg2Pixmap.svg2Pixmap(hamsterSvg, 256, 256);
+            BallpointEffect.apply(hamsterPixmap);
             loadingProgress = 1f / 3f;
             Gdx.app.postRunnable(() -> {
                 hamsterTexture = new Texture(hamsterPixmap);
@@ -177,7 +178,6 @@ public class Main extends ApplicationAdapter {
         }
         return false;
     }
-
 
     @Override
     public void render() {
