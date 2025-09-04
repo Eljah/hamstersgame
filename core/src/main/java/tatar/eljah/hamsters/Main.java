@@ -237,7 +237,8 @@ public class Main extends ApplicationAdapter {
                         factor = 1f;
                     } else {
                         factor = ((float) dist[x][y] - 1f) / ((float) maxDist - 1f);
-                        factor = 0.2f + 0.8f * factor;
+                        // Increase base opacity so SVG strokes look brighter on screen
+                        factor = 0.5f + 0.5f * factor;
                     }
                     color.a *= factor;
                     pixmap.drawPixel(x, y, Color.rgba8888(color));
