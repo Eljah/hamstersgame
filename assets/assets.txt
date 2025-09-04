@@ -8,7 +8,9 @@ grade.svg
 hamster.svg
 hamster2-removebg-preview.png
 hamster2.png
-hamster3.png
+hamster3.svg
+hamster4.png
+hamster4.svg
 hamster_old.png
 hamster_old.svg
 libgdx.png
