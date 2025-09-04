@@ -179,7 +179,7 @@ public class Main extends ApplicationAdapter {
         return false;
     }
 
-    private static void applyBallpointEffect(Pixmap pixmap) {
+    static void applyBallpointEffect(Pixmap pixmap) {
         int width = pixmap.getWidth();
         int height = pixmap.getHeight();
         int[][] dist = new int[width][height];
@@ -225,19 +225,26 @@ public class Main extends ApplicationAdapter {
                 }
             }
         }
-
+        Pixmap.Blending old = pixmap.getBlending();
+        pixmap.setBlending(Pixmap.Blending.None);
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 int pixel = pixmap.getPixel(x, y);
                 Color.rgba8888ToColor(color, pixel);
                 if (color.a > 0f) {
-                    float factor = 1f - (float) dist[x][y] / (float) maxDist;
-                    factor = 0.2f + 0.8f * factor;
+                    float factor;
+                    if (maxDist <= 1) {
+                        factor = 1f;
+                    } else {
+                        factor = ((float) dist[x][y] - 1f) / ((float) maxDist - 1f);
+                        factor = 0.2f + 0.8f * factor;
+                    }
                     color.a *= factor;
                     pixmap.drawPixel(x, y, Color.rgba8888(color));
                 }
             }
         }
+        pixmap.setBlending(old);
     }
 
 
