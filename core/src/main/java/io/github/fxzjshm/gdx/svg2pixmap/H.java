@@ -3,6 +3,7 @@ package io.github.fxzjshm.gdx.svg2pixmap;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.math.GridPoint2;
+import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.GdxRuntimeException;
@@ -283,10 +284,18 @@ public class H {
                 y += k * points[i].y;
             }
             int p = (int) Math.round(x), q = (int) Math.round(y);
-            pixmap.setColor(stroke);
-            // pixmap.fillCircle((int) Math.round(x), (int) Math.round(y), strokeWidth); // this performs worse?
-            for (int i = 0; i < strokeWidth; i++) {
-                pixmap.drawCircle(p, q, i);
+            if (strokeWidth > 0) {
+                float jitter = strokeWidth * 0.3f;
+                p += MathUtils.random(-jitter, jitter);
+                q += MathUtils.random(-jitter, jitter);
+                for (int r = strokeWidth - 1; r >= 0; r--) {
+                    float alpha = stroke.a * (0.2f + 0.8f * (1f - r / (float) strokeWidth));
+                    pixmap.setColor(stroke.r, stroke.g, stroke.b, alpha);
+                    pixmap.drawCircle(p, q, r);
+                }
+            } else {
+                pixmap.setColor(stroke);
+                pixmap.drawPixel(p, q);
             }
             p = Math.max(0, p);
             p = Math.min(w - 1, p);
