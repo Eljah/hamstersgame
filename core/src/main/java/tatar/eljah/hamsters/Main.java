@@ -62,8 +62,11 @@ public class Main extends ApplicationAdapter {
         loadingProgress = 0f;
 
         new Thread(() -> {
-            Pixmap hamsterPixmap = Svg2Pixmap.svg2Pixmap(
-                    Gdx.files.internal("hamster.svg").readString(), 64, 64);
+            String hamsterSvg = Gdx.files.internal("hamster4.svg").readString();
+            float strokeScale = Math.max(1f, Gdx.graphics.getWidth() / 800f);
+            hamsterSvg = hamsterSvg.replaceAll("stroke-width=\"[0-9.]+\"",
+                    "stroke-width=\"" + strokeScale + "\"");
+            Pixmap hamsterPixmap = Svg2Pixmap.svg2Pixmap(hamsterSvg, 64, 64);
             loadingProgress = 1f / 3f;
             Gdx.app.postRunnable(() -> {
                 hamsterTexture = new Texture(hamsterPixmap);
