@@ -63,7 +63,7 @@ public class Main extends ApplicationAdapter {
 
         new Thread(() -> {
             String hamsterSvg = Gdx.files.internal("hamster4.svg").readString();
-            float strokeScale = Math.max(1f, Gdx.graphics.getWidth() / 800f);
+            float strokeScale = Math.max(2f, Gdx.graphics.getWidth() / 400f);
             hamsterSvg = hamsterSvg.replaceAll("stroke-width=\"[0-9.]+\"",
                     "stroke-width=\"" + strokeScale + "\"");
             Pixmap hamsterPixmap = Svg2Pixmap.svg2Pixmap(hamsterSvg, 64, 64);
@@ -200,7 +200,7 @@ public class Main extends ApplicationAdapter {
             font.draw(batch, "Hamster: " + hamsterScore, 10, 590);
             font.draw(batch, "Grade: " + gradeScore, 10, 560);
             if (hamsterWin) {
-                batch.draw(hamsterTexture, 350, 250, 100, 100);
+                batch.draw(hamsterTexture, 350, 250, 120, 120);
             } else {
                 batch.draw(gradeTexture, 350, 250, 100, 100);
             }
@@ -219,7 +219,7 @@ public class Main extends ApplicationAdapter {
 
         batch.begin();
         batch.draw(backgroundTexture, 0, 0, 800, 600);
-        batch.draw(hamsterTexture, hamster.x, hamster.y);
+        batch.draw(hamsterTexture, hamster.x, hamster.y, 80, 80);
         batch.draw(gradeTexture, grade.x, grade.y);
         for (Rectangle block : blocks) {
             batch.draw(blockTexture, block.x, block.y);
