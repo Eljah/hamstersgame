@@ -194,8 +194,10 @@ public class Main extends ApplicationAdapter {
             if (gx == hx && gy == hy) continue;
 
             grid[gx][gy] = true;
-            boolean canReachAbove = isReachable(hx, hy, gx, gy + 1);
+            grid[gx][gy + 1] = true;
+            boolean canReachAbove = isReachable(hx, hy, gx, gy + 2);
             grid[gx][gy] = false;
+            grid[gx][gy + 1] = false;
 
             if (canReachAbove && isReachable(hx, hy, gx, gy)) {
                 grade = new Rectangle(gx * BLOCK_WIDTH, gy * BLOCK_HEIGHT, 64, 64);
