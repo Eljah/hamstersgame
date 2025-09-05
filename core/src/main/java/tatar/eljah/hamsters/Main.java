@@ -56,6 +56,7 @@ public class Main extends ApplicationAdapter {
     private volatile boolean loading;
     private volatile float loadingProgress;
     private FileHandle cacheDir;
+    private int[] corridorCenters;
 
     @Override
     public void create() {
@@ -126,12 +127,54 @@ public class Main extends ApplicationAdapter {
             Gdx.app.postRunnable(() -> {
                 backgroundTexture = new Texture("liner.png");
                 backgroundPixmap = new Pixmap(Gdx.files.internal("liner.png"));
+                calculateCorridors();
                 controlRenderer = new OnscreenControlRenderer();
                 resetGame();
                 loading = false;
             });
             executor.shutdown();
         });
+    }
+
+    private void calculateCorridors() {
+        int width = backgroundPixmap.getWidth();
+        int height = backgroundPixmap.getHeight();
+        java.util.ArrayList<Integer> lines = new java.util.ArrayList<>();
+        Color c = new Color();
+        boolean inLine = false;
+        for (int y = 0; y < height; y++) {
+            int nonWhite = 0;
+            for (int x = 0; x < width; x++) {
+                Color.rgba8888ToColor(c, backgroundPixmap.getPixel(x, y));
+                if (c.r < 0.9f || c.g < 0.9f || c.b < 0.9f) {
+                    nonWhite++;
+                }
+            }
+            if (nonWhite > 50) {
+                if (!inLine) {
+                    lines.add(y);
+                    inLine = true;
+                }
+            } else if (inLine) {
+                lines.add(y - 1);
+                inLine = false;
+            }
+        }
+        if (inLine) {
+            lines.add(height - 1);
+        }
+        java.util.ArrayList<Integer> centers = new java.util.ArrayList<>();
+        int prevEnd = -1;
+        for (int i = 0; i < lines.size(); i += 2) {
+            int start = lines.get(i);
+            int end = lines.get(i + 1);
+            int top = prevEnd + 1;
+            int bottom = start - 1;
+            centers.add((top + bottom) / 2);
+            prevEnd = end;
+        }
+        centers.add((prevEnd + 1 + height - 1) / 2);
+        corridorCenters = centers.stream().mapToInt(Integer::intValue).toArray();
     }
 
     private Pixmap loadCachedSvg(String name, String svg, int width, int height) {
@@ -203,10 +246,14 @@ public class Main extends ApplicationAdapter {
         boolean placed = false;
         for (int attempt = 0; attempt < 1000 && !placed; attempt++) {
             int gx = MathUtils.random(0, GRID_WIDTH - 1);
-            int gy = MathUtils.random(0, GRID_HEIGHT - 3); // ensure space above
+            int corridorIndex = MathUtils.random(0, corridorCenters.length - 1);
+            int centerY = corridorCenters[corridorIndex];
+            int yTop = centerY - 32;
+            if (yTop < 0 || yTop + 64 > 600) continue;
+            int gy = yTop / CELL_SIZE;
+            if (gy < 0 || gy + 2 >= GRID_HEIGHT) continue;
             if (grid[gx][gy] || grid[gx][gy + 1] || grid[gx][gy + 2]) continue;
             if (gx == hx && gy == hy) continue;
-
             grid[gx][gy] = true;
             grid[gx][gy + 1] = true;
             boolean canReachAbove = isReachable(hx, hy, gx, gy + 2);
@@ -214,7 +261,8 @@ public class Main extends ApplicationAdapter {
             grid[gx][gy + 1] = false;
 
             if (canReachAbove && isReachable(hx, hy, gx, gy)) {
-                grade = new Rectangle(gx * CELL_SIZE, gy * CELL_SIZE, 64, 64);
+                grade = new Rectangle(gx * CELL_SIZE, yTop, 64, 64);
+                System.out.println("GRADE_CENTER_Y=" + (grade.y + grade.height / 2));
                 placed = true;
             }
         }
@@ -259,6 +307,20 @@ public class Main extends ApplicationAdapter {
         for (int x = startX; x < startX + CELL_SIZE; x++) {
             for (int y = startY; y < startY + CELL_SIZE; y++) {
                 Color.rgba8888ToColor(c, backgroundPixmap.getPixel(x, y));
+                if (c.r < 0.95f || c.g < 0.95f || c.b < 0.95f) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private boolean isAreaClear(int x, int y, int width, int height) {
+        if (backgroundPixmap == null) return true;
+        Color c = new Color();
+        for (int px = x; px < x + width; px++) {
+            for (int py = y; py < y + height; py++) {
+                Color.rgba8888ToColor(c, backgroundPixmap.getPixel(px, py));
                 if (c.r < 0.95f || c.g < 0.95f || c.b < 0.95f) {
                     return false;
                 }
