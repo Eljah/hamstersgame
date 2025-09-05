@@ -19,8 +19,8 @@ import tatar.eljah.hamsters.Main;
  */
 public class BallpointPenRenderer {
 
-    /** Base colour of the ballpoint pen (a vivid blue). */
-    private static final Color BASE_COLOR = Color.valueOf("2f2aa8");
+    /** Base colour of the ballpoint pen (a darker blue matching real ink). */
+    private static final Color BASE_COLOR = Color.valueOf("00008b");
 
     private BallpointPenRenderer() {
         // Utility class
@@ -70,22 +70,25 @@ public class BallpointPenRenderer {
                 int pixel = pixmap.getPixel(x, y);
                 Color.rgba8888ToColor(color, pixel);
                 if (color.a > 0f) {
-                    // Base vivid blue tone
+                    // Base darker blue tone
                     color.r = BASE_COLOR.r;
                     color.g = BASE_COLOR.g;
                     color.b = BASE_COLOR.b;
-                    // Small colour variation
-                    float jitter = pseudoRandom(x, y) * 0.05f - 0.025f;
+                    // Stronger colour variation for a "rough" look
+                    float jitter = pseudoRandom(x, y) * 0.10f - 0.05f;
                     color.r = MathUtils.clamp(color.r + jitter, 0f, 1f);
                     color.g = MathUtils.clamp(color.g + jitter, 0f, 1f);
                     color.b = MathUtils.clamp(color.b + jitter, 0f, 1f);
+
                     float baseAlpha = color.a;
-                    // Deterministic sparse transparent dots
-                    if (((x + y) % 20) == 0) {
-                        color.a = baseAlpha * 0.5f;
-                    } else {
-                        color.a = baseAlpha;
+                    // Alpha jitter and irregular translucent spots
+                    float alphaJitter = pseudoRandom(x + 5, y + 11) * 0.2f - 0.1f;
+                    color.a = MathUtils.clamp(baseAlpha + alphaJitter, 0f, 1f);
+                    // Occasional blotches
+                    if (pseudoRandom(x * 17, y * 31) > 0.8f) {
+                        color.a *= 0.4f;
                     }
+
                     pixmap.drawPixel(x, y, Color.rgba8888(color));
                 }
             }
