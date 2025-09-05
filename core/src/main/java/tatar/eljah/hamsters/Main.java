@@ -20,6 +20,8 @@ import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.graphics.PixmapIO;
 import io.github.fxzjshm.gdx.svg2pixmap.Svg2Pixmap;
 
+import java.io.BufferedReader;
+import java.io.StringReader;
 import java.security.MessageDigest;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
@@ -57,6 +59,7 @@ public class Main extends ApplicationAdapter {
     private volatile float loadingProgress;
     private FileHandle cacheDir;
     private int[] corridorCenters;
+    private float[][] blockRanges;
 
     @Override
     public void create() {
@@ -79,6 +82,9 @@ public class Main extends ApplicationAdapter {
         ExecutorService executor = Executors.newFixedThreadPool(3);
         AtomicInteger completed = new AtomicInteger();
         int total = 4;
+
+        String linerSvg = Gdx.files.internal("liner.svg").readString();
+        blockRanges = parseBlockRanges(linerSvg);
 
         CompletableFuture<Pixmap> hamsterFuture = CompletableFuture.supplyAsync(() -> {
             String hamsterSvg = Gdx.files.internal("hamster4.svg").readString();
@@ -125,7 +131,7 @@ public class Main extends ApplicationAdapter {
         }));
 
         CompletableFuture<Pixmap> backgroundFuture = CompletableFuture.supplyAsync(() -> {
-            Pixmap bgPixmap = loadCachedSvg("liner", Gdx.files.internal("liner.svg").readString(), 800, 600);
+            Pixmap bgPixmap = loadCachedSvg("liner", linerSvg, 800, 600);
             loadingProgress = completed.incrementAndGet() / (float) total;
             return bgPixmap;
         }, executor);
@@ -185,6 +191,35 @@ public class Main extends ApplicationAdapter {
         corridorCenters = centers.stream().mapToInt(Integer::intValue).toArray();
     }
 
+    private float[][] parseBlockRanges(String svg) {
+        java.util.ArrayList<Float> ys = new java.util.ArrayList<>();
+        try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.StringReader(svg))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                if (line.contains("stroke-width=\"2\"") && line.contains("H800")) {
+                    int m = line.indexOf("M0 ");
+                    int h = line.indexOf("H800", m);
+                    if (m >= 0 && h >= 0) {
+                        try {
+                            ys.add(Float.parseFloat(line.substring(m + 3, h)));
+                        } catch (NumberFormatException ignored) {
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        java.util.ArrayList<float[]> pairs = new java.util.ArrayList<>();
+        for (int i = 0; i + 1 < ys.size(); i += 2) {
+            float y1 = ys.get(i);
+            float y2 = ys.get(i + 1);
+            if (y2 > y1) {
+                pairs.add(new float[]{y1, y2});
+            }
+        }
+        return pairs.toArray(new float[0][]);
+    }
+
     private Pixmap loadCachedSvg(String name, String svg, int width, int height) {
         String hash = md5(svg + width + "x" + height);
         FileHandle file = cacheDir.child(name + "-" + hash + ".png");
@@ -227,27 +262,35 @@ public class Main extends ApplicationAdapter {
         blocks = new Array<>();
         grid = new boolean[GRID_WIDTH][GRID_HEIGHT];
 
-        // generate random blocks that lie fully in blank areas of the background
-       
+        // generate blocks that span between thin horizontal lines
         for (int i = 0; i < 10; i++) {
-            int gx;
-            int gy;
             int attempts = 0;
-            do {
-                gx = MathUtils.random(0, GRID_WIDTH - 1);
-                gy = MathUtils.random(0, GRID_HEIGHT - 1);
-                attempts++;
-            } while ((grid[gx][gy]
-                    || (gx == (int) (hamster.x / CELL_SIZE) && gy == (int) (hamster.y / CELL_SIZE))
-                    || !isCellClear(gx, gy)) && attempts < 1000);
-
-            if (attempts == 1000) {
-                continue;
+            boolean placed = false;
+            while (attempts++ < 1000 && !placed) {
+                int pairIndex = MathUtils.random(blockRanges.length - 1);
+                float top = blockRanges[pairIndex][0];
+                float bottom = blockRanges[pairIndex][1];
+                float height = bottom - top;
+                int gx = MathUtils.random(0, GRID_WIDTH - 1);
+                float x = gx * CELL_SIZE;
+                int startCellY = (int) (top / CELL_SIZE);
+                int endCellY = (int) ((bottom - 1) / CELL_SIZE);
+                boolean occupied = false;
+                for (int cy = startCellY; cy <= endCellY; cy++) {
+                    if (grid[gx][cy]) {
+                        occupied = true;
+                        break;
+                    }
+                }
+                if (occupied) continue;
+                Rectangle block = new Rectangle(x, top, CELL_SIZE, height);
+                if (hamster.overlaps(block)) continue;
+                blocks.add(block);
+                for (int cy = startCellY; cy <= endCellY; cy++) {
+                    grid[gx][cy] = true;
+                }
+                placed = true;
             }
-
-            Rectangle block = new Rectangle(gx * CELL_SIZE, gy * CELL_SIZE, CELL_SIZE, CELL_SIZE);
-            blocks.add(block);
-            grid[gx][gy] = true;
         }
         int hx = (int) (hamster.x / CELL_SIZE);
         int hy = (int) (hamster.y / CELL_SIZE);
@@ -452,7 +495,7 @@ public class Main extends ApplicationAdapter {
         batch.draw(hamsterTexture, hamster.x, hamster.y, 80, 80);
         batch.draw(gradeTexture, grade.x, grade.y);
         for (Rectangle block : blocks) {
-            batch.draw(blockTexture, block.x, block.y, CELL_SIZE, CELL_SIZE);
+            batch.draw(blockTexture, block.x, block.y, block.width, block.height);
         }
         font.draw(batch, "Hamster: " + hamsterScore, 10, 590);
         font.draw(batch, "Grade: " + gradeScore, 10, 560);
