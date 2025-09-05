@@ -33,6 +33,7 @@ public class Main extends ApplicationAdapter {
     private Texture gradeTexture;
     private Texture blockTexture;
     private Texture backgroundTexture;
+    private Pixmap backgroundPixmap;
     private BitmapFont font;
     private ShapeRenderer shapeRenderer;
 
@@ -108,7 +109,7 @@ public class Main extends ApplicationAdapter {
         CompletableFuture<Pixmap> blockFuture = CompletableFuture.supplyAsync(() -> {
             String blockSvg = Gdx.files.internal("block.svg").readString();
             float finalStroke = Math.max(1.5f, Gdx.graphics.getWidth() / 400f);
-            float strokeScale = finalStroke * (256f / 32f);
+            float strokeScale = finalStroke * (64f / 32f);
             blockSvg = blockSvg.replaceAll("stroke-width=\\\"[0-9.]+\\\"",
                     "stroke-width=\\\"" + strokeScale + "\\\"");
             Pixmap blockPixmap = loadCachedSvg("block", blockSvg, CELL_SIZE, CELL_SIZE);
@@ -124,6 +125,7 @@ public class Main extends ApplicationAdapter {
         CompletableFuture.allOf(hamsterFuture, gradeFuture, blockFuture).thenRun(() -> {
             Gdx.app.postRunnable(() -> {
                 backgroundTexture = new Texture("liner.png");
+                backgroundPixmap = new Pixmap(Gdx.files.internal("liner.png"));
                 controlRenderer = new OnscreenControlRenderer();
                 resetGame();
                 loading = false;
@@ -174,20 +176,28 @@ public class Main extends ApplicationAdapter {
         blocks = new Array<>();
         grid = new boolean[GRID_WIDTH][GRID_HEIGHT];
 
-        // generate random blocks
+        // generate random blocks that lie fully in blank areas of the background
+       
         for (int i = 0; i < 10; i++) {
             int gx;
             int gy;
+            int attempts = 0;
             do {
                 gx = MathUtils.random(0, GRID_WIDTH - 1);
                 gy = MathUtils.random(0, GRID_HEIGHT - 1);
-            } while (grid[gx][gy] || (gx == (int)(hamster.x / CELL_SIZE) && gy == (int)(hamster.y / CELL_SIZE)));
+                attempts++;
+            } while ((grid[gx][gy]
+                    || (gx == (int) (hamster.x / CELL_SIZE) && gy == (int) (hamster.y / CELL_SIZE))
+                    || !isCellClear(gx, gy)) && attempts < 1000);
+
+            if (attempts == 1000) {
+                continue;
+            }
 
             Rectangle block = new Rectangle(gx * CELL_SIZE, gy * CELL_SIZE, CELL_SIZE, CELL_SIZE);
             blocks.add(block);
             grid[gx][gy] = true;
         }
-
         int hx = (int) (hamster.x / CELL_SIZE);
         int hy = (int) (hamster.y / CELL_SIZE);
         boolean placed = false;
@@ -239,6 +249,22 @@ public class Main extends ApplicationAdapter {
             }
         }
         return false;
+    }
+
+    private boolean isCellClear(int gx, int gy) {
+        if (backgroundPixmap == null) return true;
+        int startX = gx * CELL_SIZE;
+        int startY = gy * CELL_SIZE;
+        Color c = new Color();
+        for (int x = startX; x < startX + CELL_SIZE; x++) {
+            for (int y = startY; y < startY + CELL_SIZE; y++) {
+                Color.rgba8888ToColor(c, backgroundPixmap.getPixel(x, y));
+                if (c.r < 0.95f || c.g < 0.95f || c.b < 0.95f) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     public static void applyBallpointEffect(Pixmap pixmap) {
@@ -472,6 +498,7 @@ public class Main extends ApplicationAdapter {
         if (gradeTexture != null) gradeTexture.dispose();
         if (blockTexture != null) blockTexture.dispose();
         if (backgroundTexture != null) backgroundTexture.dispose();
+        if (backgroundPixmap != null) backgroundPixmap.dispose();
         if (font != null) font.dispose();
         if (shapeRenderer != null) shapeRenderer.dispose();
         if (controlRenderer != null) controlRenderer.dispose();
