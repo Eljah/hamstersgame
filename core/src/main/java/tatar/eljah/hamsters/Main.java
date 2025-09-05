@@ -110,7 +110,7 @@ public class Main extends ApplicationAdapter {
         CompletableFuture<Pixmap> blockFuture = CompletableFuture.supplyAsync(() -> {
             String blockSvg = Gdx.files.internal("block.svg").readString();
             float finalStroke = Math.max(1.5f, Gdx.graphics.getWidth() / 400f);
-            float strokeScale = finalStroke * (64f / 32f);
+            float strokeScale = finalStroke * (1024f / 32f);
             blockSvg = blockSvg.replaceAll("stroke-width=\\\"[0-9.]+\\\"",
                     "stroke-width=\\\"" + strokeScale + "\\\"");
             Pixmap blockPixmap = loadCachedSvg("block", blockSvg, CELL_SIZE, CELL_SIZE);
