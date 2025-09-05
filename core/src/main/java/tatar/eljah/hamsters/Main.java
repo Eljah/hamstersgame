@@ -78,7 +78,7 @@ public class Main extends ApplicationAdapter {
 
         ExecutorService executor = Executors.newFixedThreadPool(3);
         AtomicInteger completed = new AtomicInteger();
-        int total = 3;
+        int total = 4;
 
         CompletableFuture<Pixmap> hamsterFuture = CompletableFuture.supplyAsync(() -> {
             String hamsterSvg = Gdx.files.internal("hamster4.svg").readString();
@@ -110,23 +110,31 @@ public class Main extends ApplicationAdapter {
         CompletableFuture<Pixmap> blockFuture = CompletableFuture.supplyAsync(() -> {
             String blockSvg = Gdx.files.internal("block.svg").readString();
             float finalStroke = Math.max(1.5f, Gdx.graphics.getWidth() / 400f);
-            float strokeScale = finalStroke * (1024f / 32f);
+            float strokeScale = finalStroke * (1024f / 80f);
             blockSvg = blockSvg.replaceAll("stroke-width=\\\"[0-9.]+\\\"",
                     "stroke-width=\\\"" + strokeScale + "\\\"");
-            Pixmap blockPixmap = loadCachedSvg("block", blockSvg, CELL_SIZE, CELL_SIZE);
+            Pixmap blockPixmap = loadCachedSvg("block", blockSvg, 256, 256);
             applyBallpointEffect(blockPixmap);
             loadingProgress = completed.incrementAndGet() / (float) total;
             return blockPixmap;
         }, executor);
         blockFuture.thenAccept(pixmap -> Gdx.app.postRunnable(() -> {
             blockTexture = new Texture(pixmap);
+            blockTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
             pixmap.dispose();
         }));
 
-        CompletableFuture.allOf(hamsterFuture, gradeFuture, blockFuture).thenRun(() -> {
+        CompletableFuture<Pixmap> backgroundFuture = CompletableFuture.supplyAsync(() -> {
+            Pixmap bgPixmap = loadCachedSvg("liner", Gdx.files.internal("liner.svg").readString(), 800, 600);
+            loadingProgress = completed.incrementAndGet() / (float) total;
+            return bgPixmap;
+        }, executor);
+        backgroundFuture.thenAccept(pixmap -> Gdx.app.postRunnable(() -> {
+            backgroundTexture = new Texture(pixmap);
+            backgroundPixmap = pixmap;
+        }));
+        CompletableFuture.allOf(hamsterFuture, gradeFuture, blockFuture, backgroundFuture).thenRun(() -> {
             Gdx.app.postRunnable(() -> {
-                backgroundTexture = new Texture("liner.png");
-                backgroundPixmap = new Pixmap(Gdx.files.internal("liner.png"));
                 calculateCorridors();
                 controlRenderer = new OnscreenControlRenderer();
                 resetGame();
