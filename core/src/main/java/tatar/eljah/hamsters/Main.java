@@ -106,7 +106,13 @@ public class Main extends ApplicationAdapter {
         }));
 
         CompletableFuture<Pixmap> blockFuture = CompletableFuture.supplyAsync(() -> {
-            Pixmap blockPixmap = loadCachedSvg("block", Gdx.files.internal("block.svg").readString(), 64, 64);
+            String blockSvg = Gdx.files.internal("block.svg").readString();
+            float finalStroke = Math.max(1.5f, Gdx.graphics.getWidth() / 400f);
+            float strokeScale = finalStroke * (256f / 32f);
+            blockSvg = blockSvg.replaceAll("stroke-width=\\\"[0-9.]+\\\"",
+                    "stroke-width=\\\"" + strokeScale + "\\\"");
+            Pixmap blockPixmap = loadCachedSvg("block", blockSvg, CELL_SIZE, CELL_SIZE);
+            applyBallpointEffect(blockPixmap);
             loadingProgress = completed.incrementAndGet() / (float) total;
             return blockPixmap;
         }, executor);
@@ -151,8 +157,9 @@ public class Main extends ApplicationAdapter {
         }
     }
 
-    static final int GRID_WIDTH = 800 / 64;
-    static final int GRID_HEIGHT = 600 / 64;
+    static final int CELL_SIZE = 32;
+    static final int GRID_WIDTH = 800 / CELL_SIZE;
+    static final int GRID_HEIGHT = 600 / CELL_SIZE;
 
     Rectangle getHamster() { return hamster; }
     Rectangle getGrade() { return grade; }
@@ -174,28 +181,30 @@ public class Main extends ApplicationAdapter {
             do {
                 gx = MathUtils.random(0, GRID_WIDTH - 1);
                 gy = MathUtils.random(0, GRID_HEIGHT - 1);
-            } while (grid[gx][gy] || (gx == (int)(hamster.x / 64) && gy == (int)(hamster.y / 64)));
+            } while (grid[gx][gy] || (gx == (int)(hamster.x / CELL_SIZE) && gy == (int)(hamster.y / CELL_SIZE)));
 
-            Rectangle block = new Rectangle(gx * 64f, gy * 64f, 64, 64);
+            Rectangle block = new Rectangle(gx * CELL_SIZE, gy * CELL_SIZE, CELL_SIZE, CELL_SIZE);
             blocks.add(block);
             grid[gx][gy] = true;
         }
 
-        int hx = (int) (hamster.x / 64);
-        int hy = (int) (hamster.y / 64);
+        int hx = (int) (hamster.x / CELL_SIZE);
+        int hy = (int) (hamster.y / CELL_SIZE);
         boolean placed = false;
         for (int attempt = 0; attempt < 1000 && !placed; attempt++) {
             int gx = MathUtils.random(0, GRID_WIDTH - 1);
-            int gy = MathUtils.random(0, GRID_HEIGHT - 2); // ensure space above
-            if (grid[gx][gy] || grid[gx][gy + 1]) continue;
+            int gy = MathUtils.random(0, GRID_HEIGHT - 3); // ensure space above
+            if (grid[gx][gy] || grid[gx][gy + 1] || grid[gx][gy + 2]) continue;
             if (gx == hx && gy == hy) continue;
 
             grid[gx][gy] = true;
-            boolean canReachAbove = isReachable(hx, hy, gx, gy + 1);
+            grid[gx][gy + 1] = true;
+            boolean canReachAbove = isReachable(hx, hy, gx, gy + 2);
             grid[gx][gy] = false;
+            grid[gx][gy + 1] = false;
 
             if (canReachAbove && isReachable(hx, hy, gx, gy)) {
-                grade = new Rectangle(gx * 64f, gy * 64f, 64, 64);
+                grade = new Rectangle(gx * CELL_SIZE, gy * CELL_SIZE, 64, 64);
                 placed = true;
             }
         }
@@ -347,7 +356,7 @@ public class Main extends ApplicationAdapter {
         batch.draw(hamsterTexture, hamster.x, hamster.y, 80, 80);
         batch.draw(gradeTexture, grade.x, grade.y);
         for (Rectangle block : blocks) {
-            batch.draw(blockTexture, block.x, block.y);
+            batch.draw(blockTexture, block.x, block.y, CELL_SIZE, CELL_SIZE);
         }
         font.draw(batch, "Hamster: " + hamsterScore, 10, 590);
         font.draw(batch, "Grade: " + gradeScore, 10, 560);
