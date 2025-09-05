@@ -106,12 +106,7 @@ public class Main extends ApplicationAdapter {
         }));
 
         CompletableFuture<Pixmap> blockFuture = CompletableFuture.supplyAsync(() -> {
-            String blockSvg = Gdx.files.internal("block.svg").readString();
-            float finalStroke = Math.max(1.5f, Gdx.graphics.getWidth() / 400f);
-            float strokeScale = finalStroke * (256f / 32f);
-            blockSvg = blockSvg.replaceAll("stroke-width=\\\"[0-9.]+\\\"",
-                    "stroke-width=\\\"" + strokeScale + "\\\"");
-            Pixmap blockPixmap = loadCachedSvg("block", blockSvg, CELL_SIZE, CELL_SIZE);
+            Pixmap blockPixmap = loadCachedSvg("block", Gdx.files.internal("block.svg").readString(), BLOCK_WIDTH, BLOCK_HEIGHT);
             applyBallpointEffect(blockPixmap);
             loadingProgress = completed.incrementAndGet() / (float) total;
             return blockPixmap;
@@ -157,9 +152,10 @@ public class Main extends ApplicationAdapter {
         }
     }
 
-    static final int CELL_SIZE = 32;
-    static final int GRID_WIDTH = 800 / CELL_SIZE;
-    static final int GRID_HEIGHT = 600 / CELL_SIZE;
+    static final int BLOCK_WIDTH = 64;
+    static final int BLOCK_HEIGHT = 32;
+    static final int GRID_WIDTH = 800 / BLOCK_WIDTH;
+    static final int GRID_HEIGHT = 600 / BLOCK_HEIGHT;
 
     Rectangle getHamster() { return hamster; }
     Rectangle getGrade() { return grade; }
@@ -174,27 +170,27 @@ public class Main extends ApplicationAdapter {
         blocks = new Array<>();
         grid = new boolean[GRID_WIDTH][GRID_HEIGHT];
 
-        // generate random blocks
+        // generate random blocks on notebook lines
         for (int i = 0; i < 10; i++) {
             int gx;
             int gy;
             do {
                 gx = MathUtils.random(0, GRID_WIDTH - 1);
-                gy = MathUtils.random(0, GRID_HEIGHT - 1);
-            } while (grid[gx][gy] || (gx == (int)(hamster.x / CELL_SIZE) && gy == (int)(hamster.y / CELL_SIZE)));
+                gy = MathUtils.random(0, GRID_HEIGHT / 2 - 1) * 2;
+            } while (grid[gx][gy] || (gx == (int)(hamster.x / BLOCK_WIDTH) && gy == (int)(hamster.y / BLOCK_HEIGHT)));
 
-            Rectangle block = new Rectangle(gx * CELL_SIZE, gy * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            Rectangle block = new Rectangle(gx * BLOCK_WIDTH, gy * BLOCK_HEIGHT, BLOCK_WIDTH, BLOCK_HEIGHT);
             blocks.add(block);
             grid[gx][gy] = true;
         }
 
-        int hx = (int) (hamster.x / CELL_SIZE);
-        int hy = (int) (hamster.y / CELL_SIZE);
+        int hx = (int) (hamster.x / BLOCK_WIDTH);
+        int hy = (int) (hamster.y / BLOCK_HEIGHT);
         boolean placed = false;
         for (int attempt = 0; attempt < 1000 && !placed; attempt++) {
             int gx = MathUtils.random(0, GRID_WIDTH - 1);
-            int gy = MathUtils.random(0, GRID_HEIGHT - 3); // ensure space above
-            if (grid[gx][gy] || grid[gx][gy + 1] || grid[gx][gy + 2]) continue;
+            int gy = MathUtils.random(0, GRID_HEIGHT / 2 - 1) * 2; // ensure space above and align to lines
+            if (grid[gx][gy] || grid[gx][gy + 1]) continue;
             if (gx == hx && gy == hy) continue;
 
             grid[gx][gy] = true;
@@ -204,7 +200,7 @@ public class Main extends ApplicationAdapter {
             grid[gx][gy + 1] = false;
 
             if (canReachAbove && isReachable(hx, hy, gx, gy)) {
-                grade = new Rectangle(gx * CELL_SIZE, gy * CELL_SIZE, 64, 64);
+                grade = new Rectangle(gx * BLOCK_WIDTH, gy * BLOCK_HEIGHT, 64, 64);
                 placed = true;
             }
         }
@@ -356,7 +352,7 @@ public class Main extends ApplicationAdapter {
         batch.draw(hamsterTexture, hamster.x, hamster.y, 80, 80);
         batch.draw(gradeTexture, grade.x, grade.y);
         for (Rectangle block : blocks) {
-            batch.draw(blockTexture, block.x, block.y, CELL_SIZE, CELL_SIZE);
+            batch.draw(blockTexture, block.x, block.y, BLOCK_WIDTH, BLOCK_HEIGHT);
         }
         font.draw(batch, "Hamster: " + hamsterScore, 10, 590);
         font.draw(batch, "Grade: " + gradeScore, 10, 560);
