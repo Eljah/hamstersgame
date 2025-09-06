@@ -60,6 +60,7 @@ public class Main extends ApplicationAdapter {
     private FileHandle cacheDir;
     private int[] corridorCenters;
     private float[][] blockRanges;
+    private static final float GUIDE_STROKE_WIDTH = 2f;
 
     @Override
     public void create() {
@@ -211,8 +212,8 @@ public class Main extends ApplicationAdapter {
         }
         java.util.ArrayList<float[]> pairs = new java.util.ArrayList<>();
         for (int i = 0; i + 1 < ys.size(); i += 2) {
-            float y1 = ys.get(i);
-            float y2 = ys.get(i + 1);
+            float y1 = ys.get(i) + GUIDE_STROKE_WIDTH / 2f;
+            float y2 = ys.get(i + 1) - GUIDE_STROKE_WIDTH / 2f;
             if (y2 > y1) {
                 pairs.add(new float[]{y1, y2});
             }
