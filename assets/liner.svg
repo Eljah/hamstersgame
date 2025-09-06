@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
   <rect width="800" height="600" fill="#ffffff"/>
   <path d="M702 0V600" stroke="#ff0000" stroke-width="2"/>
-  <path d="M0 41H800" stroke="#bfd1ed" stroke-width="3"/>
+  <path d="M0 41H800" stroke="#bfd1ed" stroke-width="2"/>
   <path d="M0 71H800" stroke="#9ebae3" stroke-width="3"/>
   <path d="M0 112.5H800" stroke="#99b6e2" stroke-width="2"/>
   <path d="M0 157.5H800" stroke="#99b6e2" stroke-width="2"/>
@@ -12,8 +12,8 @@
   <path d="M0 344.5H800" stroke="#a4bee5" stroke-width="2"/>
   <path d="M0 389.5H800" stroke="#a4bee5" stroke-width="2"/>
   <path d="M0 420H800" stroke="#9ebae3" stroke-width="3"/>
-  <path d="M0 460H800" stroke="#bfd2ed" stroke-width="3"/>
-  <path d="M0 505H800" stroke="#bfd2ed" stroke-width="3"/>
+  <path d="M0 460H800" stroke="#bfd2ed" stroke-width="2"/>
+  <path d="M0 505H800" stroke="#bfd2ed" stroke-width="2"/>
   <path d="M0 535H800" stroke="#a0bbe4" stroke-width="3"/>
   <path d="M0 576.5H800" stroke="#a4bee5" stroke-width="2"/>
 </svg>
