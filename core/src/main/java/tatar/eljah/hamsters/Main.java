@@ -193,30 +193,48 @@ public class Main extends ApplicationAdapter {
     }
 
     private float[][] parseBlockRanges(String svg) {
-        java.util.ArrayList<Float> ys = new java.util.ArrayList<>();
+        java.util.ArrayList<float[]> pairs = new java.util.ArrayList<>();
         try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.StringReader(svg))) {
             String line;
+            float currentTop = Float.NaN;
+            int state = 0; // 0 = expect top thin, 1 = expect baseline, 2 = expect bottom thin
             while ((line = br.readLine()) != null) {
-                if (line.contains("stroke-width=\"2\"") && line.contains("H800")) {
-                    int m = line.indexOf("M0 ");
-                    int h = line.indexOf("H800", m);
-                    if (m >= 0 && h >= 0) {
-                        try {
-                            ys.add(Float.parseFloat(line.substring(m + 3, h)));
-                        } catch (NumberFormatException ignored) {
+                if (!line.contains("H800") || !line.contains("stroke-width")) continue;
+                int m = line.indexOf("M0 ");
+                int h = line.indexOf("H800", m);
+                int sw = line.indexOf("stroke-width=\"");
+                if (m < 0 || h < 0 || sw < 0) continue;
+                int swEnd = line.indexOf("\"", sw + 14);
+                if (swEnd < 0) continue;
+                float y;
+                float width;
+                try {
+                    y = Float.parseFloat(line.substring(m + 3, h));
+                    width = Float.parseFloat(line.substring(sw + 14, swEnd));
+                } catch (NumberFormatException e) {
+                    continue;
+                }
+
+                if (width == 2f) {
+                    if (state == 0) {
+                        currentTop = y + width / 2f;
+                        state = 1;
+                    } else if (state == 2) {
+                        // bottom thin line, ignore and reset to expect next top
+                        state = 0;
+                    }
+                } else if (width == 3f) {
+                    if (state == 1 && !Float.isNaN(currentTop)) {
+                        float bottom = y - width / 2f;
+                        if (bottom > currentTop) {
+                            pairs.add(new float[]{currentTop, bottom});
                         }
+                        currentTop = Float.NaN;
+                        state = 2;
                     }
                 }
             }
         } catch (Exception ignored) {
-        }
-        java.util.ArrayList<float[]> pairs = new java.util.ArrayList<>();
-        for (int i = 0; i + 1 < ys.size(); i += 2) {
-            float y1 = ys.get(i) + GUIDE_STROKE_WIDTH / 2f;
-            float y2 = ys.get(i + 1) - GUIDE_STROKE_WIDTH / 2f;
-            if (y2 > y1) {
-                pairs.add(new float[]{y1, y2});
-            }
         }
         return pairs.toArray(new float[0][]);
     }
