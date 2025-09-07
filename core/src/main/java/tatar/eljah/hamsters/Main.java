@@ -214,10 +214,12 @@ public class Main extends ApplicationAdapter {
         java.util.Collections.sort(ys);
         java.util.ArrayList<float[]> pairs = new java.util.ArrayList<>();
         for (int i = 0; i + 1 < ys.size(); i += 2) {
-            float y1 = ys.get(i) + GUIDE_STROKE_WIDTH;
-            float y2 = ys.get(i + 1) - GUIDE_STROKE_WIDTH;
-            if (y2 > y1) {
-                pairs.add(new float[]{y1, y2});
+            float topFromSvg = ys.get(i) + GUIDE_STROKE_WIDTH;
+            float bottomFromSvg = ys.get(i + 1) - GUIDE_STROKE_WIDTH;
+            if (bottomFromSvg > topFromSvg) {
+                float top = 600f - bottomFromSvg;
+                float bottom = 600f - topFromSvg;
+                pairs.add(new float[]{top, bottom});
             }
         }
         return pairs.toArray(new float[0][]);
