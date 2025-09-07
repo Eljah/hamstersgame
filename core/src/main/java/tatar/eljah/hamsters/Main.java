@@ -95,6 +95,7 @@ public class Main extends ApplicationAdapter {
                     "stroke-width=\\\"" + strokeScale + "\\\"");
             Pixmap hamsterPixmap = loadCachedSvg("hamster", hamsterSvg, 256, 256);
             applyBallpointEffect(hamsterPixmap);
+            hamsterPixmap = trimTransparent(hamsterPixmap);
             loadingProgress = completed.incrementAndGet() / (float) total;
             return hamsterPixmap;
         }, executor);
@@ -547,7 +548,7 @@ public class Main extends ApplicationAdapter {
         batch.end();
 
         batch.begin();
-        batch.draw(hamsterTexture, hamster.x, hamster.y, 80, 80);
+        batch.draw(hamsterTexture, hamster.x, hamster.y, hamster.width, hamster.height);
         batch.draw(gradeTexture, grade.x, grade.y);
         for (Block block : blocks) {
             Rectangle body = block.body;
