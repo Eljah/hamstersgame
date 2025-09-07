@@ -122,7 +122,7 @@ public class Main extends ApplicationAdapter {
             blockSvg = blockSvg.replaceAll("stroke-width=\\\"[0-9.]+\\\"",
                     "stroke-width=\\\"" + strokeScale + "\\\"");
             Pixmap blockPixmap = loadCachedSvg("block", blockSvg, 256, 256);
-            applyBallpointEffect(blockPixmap);
+            applyBallpointEffect(blockPixmap, 0.7f);
             blockPixmap = trimTransparent(blockPixmap);
             loadingProgress = completed.incrementAndGet() / (float) total;
             return blockPixmap;
@@ -405,6 +405,10 @@ public class Main extends ApplicationAdapter {
     }
 
     public static void applyBallpointEffect(Pixmap pixmap) {
+        applyBallpointEffect(pixmap, 0.5f);
+    }
+
+    public static void applyBallpointEffect(Pixmap pixmap, float baseOpacity) {
         int width = pixmap.getWidth();
         int height = pixmap.getHeight();
         int[][] dist = new int[width][height];
@@ -462,8 +466,7 @@ public class Main extends ApplicationAdapter {
                         factor = 1f;
                     } else {
                         factor = ((float) dist[x][y] - 1f) / ((float) maxDist - 1f);
-                        // Increase base opacity so SVG strokes look brighter on screen
-                        factor = 0.5f + 0.5f * factor;
+                        factor = baseOpacity + (1f - baseOpacity) * factor;
                     }
                     color.a *= factor;
                     pixmap.drawPixel(x, y, Color.rgba8888(color));
