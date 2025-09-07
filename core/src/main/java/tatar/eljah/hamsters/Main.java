@@ -90,7 +90,7 @@ public class Main extends ApplicationAdapter {
         CompletableFuture<Pixmap> hamsterFuture = CompletableFuture.supplyAsync(() -> {
             String hamsterSvg = Gdx.files.internal("hamster4.svg").readString();
             float finalStroke = Math.max(1.5f, Gdx.graphics.getWidth() / 400f);
-            float strokeScale = finalStroke * (1024f / 80f);
+            float strokeScale = computeStrokeScale(hamsterSvg, finalStroke);
             hamsterSvg = hamsterSvg.replaceAll("stroke-width=\\\"[0-9.]+\\\"",
                     "stroke-width=\\\"" + strokeScale + "\\\"");
             Pixmap hamsterPixmap = loadCachedSvg("hamster", hamsterSvg, 256, 256);
@@ -118,11 +118,11 @@ public class Main extends ApplicationAdapter {
         CompletableFuture<Pixmap> blockFuture = CompletableFuture.supplyAsync(() -> {
             String blockSvg = Gdx.files.internal("block.svg").readString();
             float finalStroke = Math.max(1.5f, Gdx.graphics.getWidth() / 400f);
-            float strokeScale = finalStroke * (1024f / 80f);
+            float strokeScale = computeStrokeScale(blockSvg, finalStroke);
             blockSvg = blockSvg.replaceAll("stroke-width=\\\"[0-9.]+\\\"",
                     "stroke-width=\\\"" + strokeScale + "\\\"");
             Pixmap blockPixmap = loadCachedSvg("block", blockSvg, 256, 256);
-            applyBallpointEffect(blockPixmap);
+            applyBallpointEffect(blockPixmap, 0.7f);
             blockPixmap = trimTransparent(blockPixmap);
             loadingProgress = completed.incrementAndGet() / (float) total;
             return blockPixmap;
@@ -231,6 +231,17 @@ public class Main extends ApplicationAdapter {
             }
         }
         return pairs.toArray(new float[0][]);
+    }
+
+    private static float computeStrokeScale(String svg, float finalStroke) {
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("viewBox=\\\"0 0 ([0-9.]+) [0-9.]+\\\"")
+                .matcher(svg);
+        float viewBoxWidth = 80f;
+        if (m.find()) {
+            viewBoxWidth = Float.parseFloat(m.group(1));
+        }
+        return finalStroke * (viewBoxWidth / 80f);
     }
 
     private Pixmap loadCachedSvg(String name, String svg, int width, int height) {
@@ -394,6 +405,10 @@ public class Main extends ApplicationAdapter {
     }
 
     public static void applyBallpointEffect(Pixmap pixmap) {
+        applyBallpointEffect(pixmap, 0.5f);
+    }
+
+    public static void applyBallpointEffect(Pixmap pixmap, float baseOpacity) {
         int width = pixmap.getWidth();
         int height = pixmap.getHeight();
         int[][] dist = new int[width][height];
@@ -451,8 +466,7 @@ public class Main extends ApplicationAdapter {
                         factor = 1f;
                     } else {
                         factor = ((float) dist[x][y] - 1f) / ((float) maxDist - 1f);
-                        // Increase base opacity so SVG strokes look brighter on screen
-                        factor = 0.5f + 0.5f * factor;
+                        factor = baseOpacity + (1f - baseOpacity) * factor;
                     }
                     color.a *= factor;
                     pixmap.drawPixel(x, y, Color.rgba8888(color));
