@@ -213,13 +213,20 @@ public class Main extends ApplicationAdapter {
         }
         java.util.Collections.sort(ys);
         java.util.ArrayList<float[]> pairs = new java.util.ArrayList<>();
-        for (int i = 0; i + 1 < ys.size(); i += 2) {
-            float topFromSvg = ys.get(i) + GUIDE_STROKE_WIDTH;
-            float bottomFromSvg = ys.get(i + 1) - GUIDE_STROKE_WIDTH;
-            if (bottomFromSvg > topFromSvg) {
-                float top = 600f - bottomFromSvg;
-                float bottom = 600f - topFromSvg;
-                pairs.add(new float[]{top, bottom});
+        for (int i = 0; i + 1 < ys.size();) {
+            float y1 = ys.get(i);
+            float y2 = ys.get(i + 1);
+            if (y2 - y1 < 60f) {
+                float topFromSvg = y1 + GUIDE_STROKE_WIDTH;
+                float bottomFromSvg = y2 - GUIDE_STROKE_WIDTH;
+                if (bottomFromSvg > topFromSvg) {
+                    float top = 600f - bottomFromSvg;
+                    float bottom = 600f - topFromSvg;
+                    pairs.add(new float[]{top, bottom});
+                }
+                i += 2;
+            } else {
+                i++;
             }
         }
         return pairs.toArray(new float[0][]);
@@ -537,6 +544,9 @@ public class Main extends ApplicationAdapter {
 
         batch.begin();
         batch.draw(backgroundTexture, 0, 0, 800, 600);
+        batch.end();
+
+        batch.begin();
         batch.draw(hamsterTexture, hamster.x, hamster.y, 80, 80);
         batch.draw(gradeTexture, grade.x, grade.y);
         for (Block block : blocks) {
