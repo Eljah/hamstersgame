@@ -122,6 +122,7 @@ public class Main extends ApplicationAdapter {
                     "stroke-width=\\\"" + strokeScale + "\\\"");
             Pixmap blockPixmap = loadCachedSvg("block", blockSvg, 256, 256);
             applyBallpointEffect(blockPixmap);
+            blockPixmap = trimTransparent(blockPixmap);
             loadingProgress = completed.incrementAndGet() / (float) total;
             return blockPixmap;
         }, executor);
@@ -213,8 +214,8 @@ public class Main extends ApplicationAdapter {
         java.util.Collections.sort(ys);
         java.util.ArrayList<float[]> pairs = new java.util.ArrayList<>();
         for (int i = 0; i + 1 < ys.size(); i += 2) {
-            float y1 = ys.get(i) + GUIDE_STROKE_WIDTH / 2f;
-            float y2 = ys.get(i + 1) - GUIDE_STROKE_WIDTH / 2f;
+            float y1 = ys.get(i) + GUIDE_STROKE_WIDTH;
+            float y2 = ys.get(i + 1) - GUIDE_STROKE_WIDTH;
             if (y2 > y1) {
                 pairs.add(new float[]{y1, y2});
             }
@@ -449,6 +450,46 @@ public class Main extends ApplicationAdapter {
             }
         }
         pixmap.setBlending(old);
+    }
+
+    private static Pixmap trimTransparent(Pixmap pixmap) {
+        int width = pixmap.getWidth();
+        int height = pixmap.getHeight();
+        Color c = new Color();
+        int top = 0;
+        outer: for (; top < height; top++) {
+            for (int x = 0; x < width; x++) {
+                Color.rgba8888ToColor(c, pixmap.getPixel(x, top));
+                if (c.a != 0f) break outer;
+            }
+        }
+        int bottom = height - 1;
+        outer: for (; bottom >= top; bottom--) {
+            for (int x = 0; x < width; x++) {
+                Color.rgba8888ToColor(c, pixmap.getPixel(x, bottom));
+                if (c.a != 0f) break outer;
+            }
+        }
+        int left = 0;
+        outer: for (; left < width; left++) {
+            for (int y = top; y <= bottom; y++) {
+                Color.rgba8888ToColor(c, pixmap.getPixel(left, y));
+                if (c.a != 0f) break outer;
+            }
+        }
+        int right = width - 1;
+        outer: for (; right >= left; right--) {
+            for (int y = top; y <= bottom; y++) {
+                Color.rgba8888ToColor(c, pixmap.getPixel(right, y));
+                if (c.a != 0f) break outer;
+            }
+        }
+        int newWidth = Math.max(1, right - left + 1);
+        int newHeight = Math.max(1, bottom - top + 1);
+        Pixmap trimmed = new Pixmap(newWidth, newHeight, pixmap.getFormat());
+        trimmed.drawPixmap(pixmap, 0, 0, left, top, newWidth, newHeight);
+        pixmap.dispose();
+        return trimmed;
     }
 
 
