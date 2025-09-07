@@ -43,7 +43,7 @@ public class Main extends ApplicationAdapter {
 
     private Rectangle hamster;
     private Rectangle grade;
-    private Array<Rectangle> blocks;
+    private Array<Block> blocks;
 
     private Vector2 gradeDirection;
     private boolean gameOver;
@@ -285,8 +285,8 @@ public class Main extends ApplicationAdapter {
                     }
                 }
                 if (occupied) continue;
-                Rectangle block = new Rectangle(x, top, CELL_SIZE, height);
-                if (hamster.overlaps(block)) continue;
+                Block block = new Block(new Rectangle(x, top, CELL_SIZE, height));
+                if (hamster.overlaps(block.body)) continue;
                 blocks.add(block);
                 for (int cy = startCellY; cy <= endCellY; cy++) {
                     grid[gx][cy] = true;
@@ -496,8 +496,9 @@ public class Main extends ApplicationAdapter {
         batch.draw(backgroundTexture, 0, 0, 800, 600);
         batch.draw(hamsterTexture, hamster.x, hamster.y, 80, 80);
         batch.draw(gradeTexture, grade.x, grade.y);
-        for (Rectangle block : blocks) {
-            batch.draw(blockTexture, block.x, block.y, block.width, block.height);
+        for (Block block : blocks) {
+            Rectangle body = block.body;
+            batch.draw(blockTexture, body.x, body.y, body.width, body.height);
         }
         font.draw(batch, "Hamster: " + hamsterScore, 10, 590);
         font.draw(batch, "Grade: " + gradeScore, 10, 560);
@@ -544,17 +545,18 @@ public class Main extends ApplicationAdapter {
         if (grade.x < 0 || grade.x > 800 - 64) gradeDirection.x = -gradeDirection.x;
         if (grade.y < 0 || grade.y > 600 - 64) gradeDirection.y = -gradeDirection.y;
 
-        for (Rectangle block : blocks) {
+        for (Block block : blocks) {
+            Rectangle body = block.body;
             Rectangle intersection = new Rectangle();
-            if (Intersector.intersectRectangles(hamster, block, intersection)) {
+            if (Intersector.intersectRectangles(hamster, body, intersection)) {
                 if (intersection.width < intersection.height) {
-                    if (hamster.x < block.x) {
+                    if (hamster.x < body.x) {
                         hamster.x -= intersection.width;
                     } else {
                         hamster.x += intersection.width;
                     }
                 } else {
-                    if (hamster.y < block.y) {
+                    if (hamster.y < body.y) {
                         hamster.y -= intersection.height;
                     } else {
                         hamster.y += intersection.height;
@@ -562,16 +564,16 @@ public class Main extends ApplicationAdapter {
                 }
             }
 
-            if (Intersector.intersectRectangles(grade, block, intersection)) {
+            if (Intersector.intersectRectangles(grade, body, intersection)) {
                 if (intersection.width < intersection.height) {
-                    if (grade.x < block.x) {
+                    if (grade.x < body.x) {
                         grade.x -= intersection.width;
                     } else {
                         grade.x += intersection.width;
                     }
                     gradeDirection.x = -gradeDirection.x;
                 } else {
-                    if (grade.y < block.y) {
+                    if (grade.y < body.y) {
                         grade.y -= intersection.height;
                     } else {
                         grade.y += intersection.height;
