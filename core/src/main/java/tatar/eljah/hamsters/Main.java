@@ -44,6 +44,7 @@ public class Main extends ApplicationAdapter {
     private Rectangle hamster;
     private Rectangle grade;
     private Array<Block> blocks;
+    private Array<Rectangle> squares;
 
     private Vector2 gradeDirection;
     private boolean gameOver;
@@ -265,7 +266,16 @@ public class Main extends ApplicationAdapter {
         hamster = new Rectangle(400 - 32, 300 - 32, 64, 64);
 
         blocks = new Array<>();
+        squares = new Array<>();
         grid = new boolean[GRID_WIDTH][GRID_HEIGHT];
+
+        for (float[] pair : blockRanges) {
+            float top = pair[0];
+            float bottom = pair[1];
+            float size = bottom - top;
+            float x = MathUtils.random(0, 800 - size);
+            squares.add(new Rectangle(x, top, size, size));
+        }
 
         // generate blocks that span between thin horizontal lines
         for (int i = 0; i < 10; i++) {
@@ -534,9 +544,20 @@ public class Main extends ApplicationAdapter {
 
         camera.update();
         batch.setProjectionMatrix(camera.combined);
+        shapeRenderer.setProjectionMatrix(camera.combined);
 
         batch.begin();
         batch.draw(backgroundTexture, 0, 0, 800, 600);
+        batch.end();
+
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+        shapeRenderer.setColor(Color.LIGHT_GRAY);
+        for (Rectangle square : squares) {
+            shapeRenderer.rect(square.x, square.y, square.width, square.height);
+        }
+        shapeRenderer.end();
+
+        batch.begin();
         batch.draw(hamsterTexture, hamster.x, hamster.y, 80, 80);
         batch.draw(gradeTexture, grade.x, grade.y);
         for (Block block : blocks) {
