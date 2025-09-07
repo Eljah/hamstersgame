@@ -95,6 +95,7 @@ public class Main extends ApplicationAdapter {
                     "stroke-width=\\\"" + strokeScale + "\\\"");
             Pixmap hamsterPixmap = loadCachedSvg("hamster", hamsterSvg, 256, 256);
             applyBallpointEffect(hamsterPixmap);
+            hamsterPixmap = trimTransparent(hamsterPixmap);
             loadingProgress = completed.incrementAndGet() / (float) total;
             return hamsterPixmap;
         }, executor);
