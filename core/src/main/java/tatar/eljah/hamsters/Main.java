@@ -3,6 +3,7 @@ package tatar.eljah.hamsters;
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
+import com.badlogic.gdx.audio.Music;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
@@ -38,6 +39,7 @@ public class Main extends ApplicationAdapter {
     private Pixmap backgroundPixmap;
     private BitmapFont font;
     private ShapeRenderer shapeRenderer;
+    private Music backgroundMusic;
 
     private OrthographicCamera camera;
 
@@ -70,6 +72,11 @@ public class Main extends ApplicationAdapter {
 
         camera = new OrthographicCamera();
         camera.setToOrtho(false, 800, 600);
+
+        backgroundMusic = Gdx.audio.newMusic(Gdx.files.internal("aldermeshka.mp3"));
+        backgroundMusic.setLooping(true);
+        backgroundMusic.setVolume(0.5f);
+        backgroundMusic.play();
 
         hamsterScore = 0;
         gradeScore = 0;
@@ -687,5 +694,9 @@ public class Main extends ApplicationAdapter {
         if (font != null) font.dispose();
         if (shapeRenderer != null) shapeRenderer.dispose();
         if (controlRenderer != null) controlRenderer.dispose();
+        if (backgroundMusic != null) {
+            backgroundMusic.stop();
+            backgroundMusic.dispose();
+        }
     }
 }
