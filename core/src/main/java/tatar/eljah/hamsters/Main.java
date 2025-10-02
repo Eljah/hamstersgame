@@ -17,18 +17,10 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Array;
-import com.badlogic.gdx.files.FileHandle;
-import com.badlogic.gdx.graphics.PixmapIO;
 import io.github.fxzjshm.gdx.svg2pixmap.Svg2Pixmap;
 
 import java.io.BufferedReader;
 import java.io.StringReader;
-import java.security.MessageDigest;
-import java.nio.charset.StandardCharsets;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class Main extends ApplicationAdapter {
     private SpriteBatch batch;
@@ -59,10 +51,12 @@ public class Main extends ApplicationAdapter {
 
     private volatile boolean loading;
     private volatile float loadingProgress;
-    private FileHandle cacheDir;
     private int[] corridorCenters;
     private float[][] blockRanges;
     private static final float GUIDE_STROKE_WIDTH = 2f;
+    private Array<Runnable> loadingTasks;
+    private int totalLoadingTasks;
+    private int completedLoadingTasks;
 
     @Override
     public void create() {
@@ -83,81 +77,88 @@ public class Main extends ApplicationAdapter {
 
         loading = true;
         loadingProgress = 0f;
-        String tmp = System.getProperty("java.io.tmpdir");
-        cacheDir = (tmp != null ? Gdx.files.absolute(tmp) : Gdx.files.local(".")).child("hamstersgame-cache");
-        cacheDir.mkdirs();
-
-        ExecutorService executor = Executors.newFixedThreadPool(3);
-        AtomicInteger completed = new AtomicInteger();
-        int total = 4;
-
         String linerSvg = Gdx.files.internal("liner.svg").readString();
         blockRanges = parseBlockRanges(linerSvg);
+        prepareLoadingTasks(linerSvg);
+    }
 
-        CompletableFuture<Pixmap> hamsterFuture = CompletableFuture.supplyAsync(() -> {
+    private void prepareLoadingTasks(String linerSvg) {
+        loadingTasks = new Array<>();
+        completedLoadingTasks = 0;
+
+        loadingTasks.add(() -> {
             String hamsterSvg = Gdx.files.internal("hamster4.svg").readString();
             float finalStroke = Math.max(1.5f, Gdx.graphics.getWidth() / 400f);
             float strokeScale = computeStrokeScale(hamsterSvg, finalStroke);
             hamsterSvg = hamsterSvg.replaceAll("stroke-width=\\\"[0-9.]+\\\"",
                     "stroke-width=\\\"" + strokeScale + "\\\"");
-            Pixmap hamsterPixmap = loadCachedSvg("hamster", hamsterSvg, 256, 256);
+            Pixmap hamsterPixmap = loadSvg(hamsterSvg, 256, 256);
             applyBallpointEffect(hamsterPixmap);
             hamsterPixmap = trimTransparent(hamsterPixmap);
-            loadingProgress = completed.incrementAndGet() / (float) total;
-            return hamsterPixmap;
-        }, executor);
-        hamsterFuture.thenAccept(pixmap -> Gdx.app.postRunnable(() -> {
-            hamsterTexture = new Texture(pixmap);
+            hamsterTexture = new Texture(hamsterPixmap);
             hamsterTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
-            pixmap.dispose();
-        }));
+            hamsterPixmap.dispose();
+        });
 
-        CompletableFuture<Pixmap> gradeFuture = CompletableFuture.supplyAsync(() -> {
-            Pixmap gradePixmap = loadCachedSvg("grade", Gdx.files.internal("grade.svg").readString(), 64, 64);
-            loadingProgress = completed.incrementAndGet() / (float) total;
-            return gradePixmap;
-        }, executor);
-        gradeFuture.thenAccept(pixmap -> Gdx.app.postRunnable(() -> {
-            gradeTexture = new Texture(pixmap);
-            pixmap.dispose();
-        }));
+        loadingTasks.add(() -> {
+            Pixmap gradePixmap = loadSvg(Gdx.files.internal("grade.svg").readString(), 64, 64);
+            gradeTexture = new Texture(gradePixmap);
+            gradePixmap.dispose();
+        });
 
-        CompletableFuture<Pixmap> blockFuture = CompletableFuture.supplyAsync(() -> {
+        loadingTasks.add(() -> {
             String blockSvg = Gdx.files.internal("block.svg").readString();
             float finalStroke = Math.max(1.5f, Gdx.graphics.getWidth() / 400f);
             float strokeScale = computeStrokeScale(blockSvg, finalStroke);
             blockSvg = blockSvg.replaceAll("stroke-width=\\\"[0-9.]+\\\"",
                     "stroke-width=\\\"" + strokeScale + "\\\"");
-            Pixmap blockPixmap = loadCachedSvg("block", blockSvg, 256, 256);
+            Pixmap blockPixmap = loadSvg(blockSvg, 256, 256);
             applyBallpointEffect(blockPixmap, 0.7f);
             blockPixmap = trimTransparent(blockPixmap);
-            loadingProgress = completed.incrementAndGet() / (float) total;
-            return blockPixmap;
-        }, executor);
-        blockFuture.thenAccept(pixmap -> Gdx.app.postRunnable(() -> {
-            blockTexture = new Texture(pixmap);
+            blockTexture = new Texture(blockPixmap);
             blockTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
-            pixmap.dispose();
-        }));
-
-        CompletableFuture<Pixmap> backgroundFuture = CompletableFuture.supplyAsync(() -> {
-            Pixmap bgPixmap = loadCachedSvg("liner", linerSvg, 800, 600);
-            loadingProgress = completed.incrementAndGet() / (float) total;
-            return bgPixmap;
-        }, executor);
-        backgroundFuture.thenAccept(pixmap -> Gdx.app.postRunnable(() -> {
-            backgroundTexture = new Texture(pixmap);
-            backgroundPixmap = pixmap;
-        }));
-        CompletableFuture.allOf(hamsterFuture, gradeFuture, blockFuture, backgroundFuture).thenRun(() -> {
-            Gdx.app.postRunnable(() -> {
-                calculateCorridors();
-                controlRenderer = new OnscreenControlRenderer();
-                resetGame();
-                loading = false;
-            });
-            executor.shutdown();
+            blockPixmap.dispose();
         });
+
+        loadingTasks.add(() -> {
+            Pixmap bgPixmap = loadSvg(linerSvg, 800, 600);
+            backgroundTexture = new Texture(bgPixmap);
+            backgroundPixmap = bgPixmap;
+        });
+
+        totalLoadingTasks = loadingTasks.size;
+        if (totalLoadingTasks == 0) {
+            finishLoading();
+        }
+    }
+
+    private void finishLoading() {
+        calculateCorridors();
+        controlRenderer = new OnscreenControlRenderer();
+        resetGame();
+        loadingProgress = 1f;
+        loading = false;
+        loadingTasks = null;
+        totalLoadingTasks = 0;
+        completedLoadingTasks = 0;
+    }
+
+    private void runNextLoadingTask() {
+        if (loadingTasks == null || loadingTasks.size == 0) {
+            finishLoading();
+            return;
+        }
+        Runnable task = loadingTasks.removeIndex(0);
+        task.run();
+        completedLoadingTasks++;
+        if (totalLoadingTasks > 0) {
+            loadingProgress = completedLoadingTasks / (float) totalLoadingTasks;
+        } else {
+            loadingProgress = 1f;
+        }
+        if (loadingTasks.size == 0) {
+            finishLoading();
+        }
     }
 
     private void calculateCorridors() {
@@ -251,29 +252,8 @@ public class Main extends ApplicationAdapter {
         return finalStroke * (viewBoxWidth / 80f);
     }
 
-    private Pixmap loadCachedSvg(String name, String svg, int width, int height) {
-        String hash = md5(svg + width + "x" + height);
-        FileHandle file = cacheDir.child(name + "-" + hash + ".png");
-        if (file.exists()) {
-            return new Pixmap(file);
-        }
-        Pixmap pixmap = Svg2Pixmap.svg2Pixmap(svg, width, height);
-        PixmapIO.writePNG(file, pixmap);
-        return pixmap;
-    }
-
-    private static String md5(String input) {
-        try {
-            MessageDigest md = MessageDigest.getInstance("MD5");
-            byte[] bytes = md.digest(input.getBytes(StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            for (byte b : bytes) {
-                sb.append(String.format("%02x", b));
-            }
-            return sb.toString();
-        } catch (Exception e) {
-            return Integer.toHexString(input.hashCode());
-        }
+    private Pixmap loadSvg(String svg, int width, int height) {
+        return Svg2Pixmap.svg2Pixmap(svg, width, height);
     }
 
     static final int CELL_SIZE = 32;
@@ -527,18 +507,21 @@ public class Main extends ApplicationAdapter {
     @Override
     public void render() {
         if (loading) {
-            Gdx.gl.glClearColor(0, 0, 0, 1);
-            Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
+            runNextLoadingTask();
+            if (loading) {
+                Gdx.gl.glClearColor(0, 0, 0, 1);
+                Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
-            shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
-            shapeRenderer.setColor(Color.WHITE);
-            shapeRenderer.rect(100, 300, 600 * loadingProgress, 20);
-            shapeRenderer.end();
+                shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+                shapeRenderer.setColor(Color.WHITE);
+                shapeRenderer.rect(100, 300, 600 * loadingProgress, 20);
+                shapeRenderer.end();
 
-            batch.begin();
-            font.draw(batch, "Loading...", 350, 340);
-            batch.end();
-            return;
+                batch.begin();
+                font.draw(batch, "Loading...", 350, 340);
+                batch.end();
+                return;
+            }
         }
         if (gameOver) {
             Gdx.gl.glClearColor(1, 0, 0, 1);
