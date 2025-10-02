@@ -1,20 +1,21 @@
-plugins {
-    id 'application'
+apply plugin: 'application'
+
+sourceSets.main.resources.srcDirs += [ rootProject.file('assets').path ]
+
+mainClassName = 'tatar.eljah.hamsters.tools.blockeditor.BlockEditorLauncher'
+application.setMainClass(mainClassName)
+
+eclipse.project.name = appName + '-tools'
+
+java.sourceCompatibility = 8
+java.targetCompatibility = 8
+if (JavaVersion.current().isJava9Compatible()) {
+    compileJava.options.release.set(8)
 }
 
-repositories {
-    mavenCentral()
-}
-
-java {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
-}
-
-application {
-    mainClass = 'tools.VectorizeAssets'
-}
-
-tasks.named('run') {
-    workingDir = rootProject.projectDir
+dependencies {
+    implementation "com.badlogicgames.gdx:gdx:$gdxVersion"
+    implementation "com.badlogicgames.gdx:gdx-backend-lwjgl3:$gdxVersion"
+    implementation "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
+    implementation "org.apache.xmlgraphics:batik-all:1.16"
 }
