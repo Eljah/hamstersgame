@@ -21,6 +21,7 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -50,14 +51,7 @@ class BlockEditorPanel extends JPanel {
     private Rectangle2D.Double regionInitialRect;
 
     BlockEditorPanel() {
-        try (InputStream in = BlockEditorPanel.class.getResourceAsStream("/liner.png")) {
-            if (in == null) {
-                throw new IOException("Missing liner.png in assets");
-            }
-            backgroundImage = ImageIO.read(in);
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to load background", e);
-        }
+        backgroundImage = loadBackgroundImage();
         setBackground(Color.WHITE);
         setPreferredSize(new Dimension(backgroundImage.getWidth(), backgroundImage.getHeight()));
         setFocusable(true);
@@ -95,6 +89,46 @@ class BlockEditorPanel extends JPanel {
         descenders.clear();
         bodyRegion = null;
         repaint();
+    }
+
+    private static BufferedImage loadBackgroundImage() {
+        try {
+            try (InputStream pngStream = BlockEditorPanel.class.getResourceAsStream("/liner.png")) {
+                if (pngStream != null) {
+                    return ImageIO.read(pngStream);
+                }
+            }
+
+            URL svgUrl = BlockEditorPanel.class.getResource("/liner.svg");
+            if (svgUrl != null) {
+                try (InputStream svgStream = svgUrl.openStream()) {
+                    SvgHandle handle = SvgLoader.load(svgStream, svgUrl.toString());
+                    return rasterizeSvg(handle);
+                }
+            }
+
+            throw new IOException("Missing liner background asset (liner.png or liner.svg)");
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to load background", e);
+        }
+    }
+
+    private static BufferedImage rasterizeSvg(SvgHandle handle) throws IOException {
+        Rectangle2D bounds = handle.getBounds();
+        int width = (int) Math.ceil(bounds.getWidth());
+        int height = (int) Math.ceil(bounds.getHeight());
+
+        if (width <= 0 || height <= 0) {
+            throw new IOException("SVG has invalid dimensions");
+        }
+
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D graphics = image.createGraphics();
+        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        graphics.translate(-bounds.getX(), -bounds.getY());
+        handle.getGraphicsNode().paint(graphics);
+        graphics.dispose();
+        return image;
     }
 
     void setSvgScale(double scale) {
