@@ -3,6 +3,7 @@ package tools;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -41,18 +42,16 @@ public class PenVectorize {
         int rgb;
         String gradientId;
         String colorHex;
-        switch (color) {
-            case "blue" -> {
-                rgb = 0x0033cc;
-                gradientId = "bluePen";
-                colorHex = "#0033cc";
-            }
-            case "red" -> {
-                rgb = 0xcc0000;
-                gradientId = "redPen";
-                colorHex = "#cc0000";
-            }
-            default -> throw new IllegalArgumentException("Unsupported color; use 'blue' or 'red'");
+        if ("blue".equals(color)) {
+            rgb = 0x0033cc;
+            gradientId = "bluePen";
+            colorHex = "#0033cc";
+        } else if ("red".equals(color)) {
+            rgb = 0xcc0000;
+            gradientId = "redPen";
+            colorHex = "#cc0000";
+        } else {
+            throw new IllegalArgumentException("Unsupported color; use 'blue' or 'red'");
         }
 
         penPng(inputPath, rgb);
@@ -159,7 +158,7 @@ public class PenVectorize {
                 rects +
                 "</svg>\n";
         Path outSvg = inputPng.resolveSibling(replaceExtension(inputPng.getFileName().toString(), "svg"));
-        Files.writeString(outSvg, svg);
+        Files.write(outSvg, svg.getBytes(StandardCharsets.UTF_8));
     }
 
     private static String replaceExtension(String fileName, String newExt) {
