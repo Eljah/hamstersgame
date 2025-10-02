@@ -9,6 +9,8 @@ dependencies {
   api "com.badlogicgames.gdx:gdx:$gdxVersion"
 
   testImplementation 'junit:junit:4.13.2'
+  testImplementation "com.badlogicgames.gdx:gdx-backend-headless:$gdxVersion"
+  testImplementation "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
 
   if(enableGraalNative == 'true') {
     implementation "io.github.berstanio:gdx-svmhelper-annotations:$graalHelperVersion"
