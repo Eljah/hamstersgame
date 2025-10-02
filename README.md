@@ -29,6 +29,7 @@ Useful Gradle tasks and flags:
 - `clean`: removes `build` folders, which store compiled classes and built archives.
 - `eclipse`: generates Eclipse project data.
 - `html:dist`: compiles GWT sources. The compiled application can be found at `html/build/dist`: you can use any HTTP server to deploy it.
+- `html:beforeRun`: prepares and launches the Jetty dev server together with the SuperDev code server. By default it binds to port `8087`. If that port is already taken on your machine (the build will fail with `Failed to bind to /0.0.0.0:8087`), pass another value with `./gradlew html:beforeRun -PhtmlDevPort=8090` or set `HTML_DEV_PORT` in the environment. The task reuses the GWT draft output directory (`html/build/gwt/draftOut`), so the hashed PNGs and other preloader assets produced by `draftCompileGwt` end up under `assets/` and can be served to the browser.
 - `html:superDev`: compiles GWT sources and runs the application in SuperDev mode. It will be available at [localhost:8080/html](http://localhost:8080/html). Use only during development.
 - `idea`: generates IntelliJ project data.
 - `lwjgl3:jar`: builds application's runnable jar, which can be found at `lwjgl3/build/libs`.
