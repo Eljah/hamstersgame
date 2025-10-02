@@ -1,3 +1,4 @@
+aldermeshka.mp3
 block.png
 block.svg
 com/badlogic/gdx/utils/lsans-15.fnt
@@ -8,8 +9,6 @@ grade.svg
 hamster.svg
 hamster2-removebg-preview.png
 hamster2.png
-hamster3.svg
-hamster4.png
 hamster4.svg
 hamster_old.png
 hamster_old.svg
