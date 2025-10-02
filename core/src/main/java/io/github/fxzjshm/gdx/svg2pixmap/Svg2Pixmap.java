@@ -374,38 +374,26 @@ public class Svg2Pixmap {
                 scale2 = generateScale * generateScale;
         final Pixmap scaledPixmap = svg2PixmapDirectDraw(fileContent, scaledWidth, scaledHeight),
                 pixmap = new Pixmap(width, height, Pixmap.Format.RGBA8888);
-        AtomicInteger count = new AtomicInteger(0);
-        for (int x = 0; x < width; x++) {
-            final int x0 = x;
-            H.asyncExecutor.submit(() -> {
-                Color tmpColor = new Color();
-                float r, g, b, a;
-                for (int y = 0; y < height; y++) {
-                    final int y0 = y;
-                    r = g = b = a = 0;
-                    for (int i = 0; i < generateScale; i++) {
-                        for (int j = 0; j < generateScale; j++) {
-                            int color = scaledPixmap.getPixel(x0 * generateScale + i, y0 * generateScale + j);
-                            Color.rgba8888ToColor(tmpColor, color);
-                            r += tmpColor.r;
-                            g += tmpColor.g;
-                            b += tmpColor.b;
-                            a += tmpColor.a;
-                        }
-                    }
-                    r /= scale2;
-                    g /= scale2;
-                    b /= scale2;
-                    a /= scale2;
-                    pixmap.drawPixel(x0, y0, Color.rgba8888(r, g, b, a));
-                }
-                count.incrementAndGet();
-                return null;
-            });
+
+        if (Gdx.app != null && Gdx.app.getType() == Application.ApplicationType.WebGL) {
+            for (int x = 0; x < width; x++) {
+                downsampleColumn(scaledPixmap, pixmap, x, height, generateScale, scale2);
+            }
+        } else {
+            AtomicInteger count = new AtomicInteger(0);
+            for (int x = 0; x < width; x++) {
+                final int x0 = x;
+                H.asyncExecutor.submit(() -> {
+                    downsampleColumn(scaledPixmap, pixmap, x0, height, generateScale, scale2);
+                    count.incrementAndGet();
+                    return null;
+                });
+            }
+            while (count.get() < width) {
+                ThreadUtils.yield();
+            }
         }
-        while (count.get() < width) {
-            ThreadUtils.yield();
-        }
+
         scaledPixmap.dispose();
         return pixmap;
     }
@@ -545,6 +533,29 @@ public class Svg2Pixmap {
      */
     public interface ICallback {
         void onload(Pixmap pixmap);
+    }
+
+    private static void downsampleColumn(Pixmap scaledPixmap, Pixmap pixmap, int x, int height,
+                                         int scale, int scaleSquared) {
+        Color tmpColor = new Color();
+        for (int y = 0; y < height; y++) {
+            float r = 0f, g = 0f, b = 0f, a = 0f;
+            for (int i = 0; i < scale; i++) {
+                for (int j = 0; j < scale; j++) {
+                    int color = scaledPixmap.getPixel(x * scale + i, y * scale + j);
+                    Color.rgba8888ToColor(tmpColor, color);
+                    r += tmpColor.r;
+                    g += tmpColor.g;
+                    b += tmpColor.b;
+                    a += tmpColor.a;
+                }
+            }
+            r /= scaleSquared;
+            g /= scaleSquared;
+            b /= scaleSquared;
+            a /= scaleSquared;
+            pixmap.drawPixel(x, y, Color.rgba8888(r, g, b, a));
+        }
     }
 
 }
