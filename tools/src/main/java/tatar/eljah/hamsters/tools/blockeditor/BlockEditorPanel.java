@@ -21,6 +21,7 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -50,14 +51,7 @@ class BlockEditorPanel extends JPanel {
     private Rectangle2D.Double regionInitialRect;
 
     BlockEditorPanel() {
-        try (InputStream in = BlockEditorPanel.class.getResourceAsStream("/liner.png")) {
-            if (in == null) {
-                throw new IOException("Missing liner.png in assets");
-            }
-            backgroundImage = ImageIO.read(in);
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to load background", e);
-        }
+        backgroundImage = loadBackgroundImage();
         setBackground(Color.WHITE);
         setPreferredSize(new Dimension(backgroundImage.getWidth(), backgroundImage.getHeight()));
         setFocusable(true);
@@ -72,6 +66,49 @@ class BlockEditorPanel extends JPanel {
                 removeSelectedRegion();
             }
         });
+    }
+
+    private static BufferedImage loadBackgroundImage() {
+        try (InputStream pngStream = BlockEditorPanel.class.getResourceAsStream("/liner.png")) {
+            if (pngStream != null) {
+                BufferedImage image = ImageIO.read(pngStream);
+                if (image != null) {
+                    return image;
+                }
+            }
+        } catch (IOException ignored) {
+            // Fall back to SVG loading below
+        }
+
+        URL svgUrl = BlockEditorPanel.class.getResource("/liner.svg");
+        if (svgUrl != null) {
+            try {
+                SvgHandle svg = SvgLoader.load(svgUrl.toString());
+                Rectangle2D bounds = svg.getBounds();
+                int width = (int) Math.ceil(bounds.getWidth());
+                int height = (int) Math.ceil(bounds.getHeight());
+                if (width <= 0 || height <= 0) {
+                    throw new IOException("liner.svg has invalid dimensions");
+                }
+
+                BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+                Graphics2D g2d = image.createGraphics();
+                try {
+                    g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    g2d.setColor(Color.WHITE);
+                    g2d.fillRect(0, 0, width, height);
+                    g2d.translate(-bounds.getX(), -bounds.getY());
+                    svg.getGraphicsNode().paint(g2d);
+                } finally {
+                    g2d.dispose();
+                }
+                return image;
+            } catch (IOException e) {
+                throw new IllegalStateException("Failed to rasterize liner.svg", e);
+            }
+        }
+
+        throw new IllegalStateException("Failed to load background: liner assets are missing");
     }
 
     boolean hasSvgLoaded() {

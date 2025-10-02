@@ -18,10 +18,17 @@ final class SvgLoader {
     }
 
     static SvgHandle load(File file) throws IOException {
+        return load(file.toURI().toString());
+    }
+
+    static SvgHandle load(String uri) throws IOException {
         String parser = XMLResourceDescriptor.getXMLParserClassName();
         SAXSVGDocumentFactory factory = new SAXSVGDocumentFactory(parser);
-        SVGDocument document = factory.createSVGDocument(file.toURI().toString());
+        SVGDocument document = factory.createSVGDocument(uri);
+        return buildHandle(document);
+    }
 
+    private static SvgHandle buildHandle(SVGDocument document) throws IOException {
         UserAgentAdapter userAgent = new UserAgentAdapter();
         DocumentLoader loader = new DocumentLoader(userAgent);
         BridgeContext context = new BridgeContext(userAgent, loader);
