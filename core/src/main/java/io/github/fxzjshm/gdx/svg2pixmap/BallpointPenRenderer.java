@@ -2,8 +2,6 @@ package io.github.fxzjshm.gdx.svg2pixmap;
 
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.Pixmap;
-import com.badlogic.gdx.graphics.PixmapIO;
-import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.math.MathUtils;
 
 import tatar.eljah.hamsters.Main;
@@ -14,9 +12,8 @@ import tatar.eljah.hamsters.Main;
  * The class converts an SVG into a {@link Pixmap} using {@link Svg2Pixmap}, applies
  * the existing {@link Main#applyBallpointEffect(Pixmap)} to soften edges, then adds
  * deterministic colour and transparency jitter so that the result resembles a
- * hand‑drawn ballpoint pen line. The produced pixmap can optionally be written
- * to a PNG file.
- */
+ * hand‑drawn ballpoint pen line.
+*/
 public class BallpointPenRenderer {
 
     /** Base colour of the ballpoint pen (a darker blue matching real ink). */
@@ -39,20 +36,6 @@ public class BallpointPenRenderer {
         Main.applyBallpointEffect(pixmap);
         applyInkNoise(pixmap);
         return pixmap;
-    }
-
-    /**
-     * Render the SVG and immediately write the result to a PNG file.
-     *
-     * @param svg    SVG string.
-     * @param width  width of the target image.
-     * @param height height of the target image.
-     * @param output where to write the PNG.
-     */
-    public static void renderToFile(String svg, int width, int height, FileHandle output) {
-        Pixmap pixmap = render(svg, width, height);
-        PixmapIO.writePNG(output, pixmap);
-        pixmap.dispose();
     }
 
     /**
