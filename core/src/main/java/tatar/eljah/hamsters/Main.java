@@ -18,12 +18,13 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Array;
+import com.badlogic.gdx.utils.JsonReader;
+import com.badlogic.gdx.utils.JsonValue;
+import com.badlogic.gdx.utils.ObjectMap;
 import com.badlogic.gdx.files.FileHandle;
 import io.github.fxzjshm.gdx.svg2pixmap.Svg2Pixmap;
 import tatar.eljah.hamsters.PixmapCache;
 
-import java.io.BufferedReader;
-import java.io.StringReader;
 import java.security.MessageDigest;
 import java.nio.charset.StandardCharsets;
 
@@ -43,6 +44,7 @@ public class Main extends ApplicationAdapter {
     private Rectangle hamster;
     private Rectangle grade;
     private Array<Block> blocks;
+    private Array<Block> sceneBlocks = new Array<>();
 
     private Vector2 gradeDirection;
     private boolean gameOver;
@@ -59,13 +61,24 @@ public class Main extends ApplicationAdapter {
     private volatile float loadingProgress;
     private FileHandle cacheDir;
     private int[] corridorCenters;
-    private float[][] blockRanges;
-    private static final float GUIDE_STROKE_WIDTH = 2f;
-
+    private final ObjectMap<String, BlockTemplate> blockTemplateCache = new ObjectMap<>();
+    private int sceneWidth = 800;
+    private int sceneHeight = 600;
     @Override
     public void create() {
         if (Gdx.app.getType() == Application.ApplicationType.WebGL) {
             Svg2Pixmap.generateScale = 1;
+        }
+
+        JsonValue sceneJson = null;
+        try {
+            sceneJson = new JsonReader().parse(Gdx.files.internal("scenes/scene.json"));
+        } catch (Exception e) {
+            Gdx.app.error("Main", "Failed to load scene configuration", e);
+        }
+        if (sceneJson != null) {
+            sceneWidth = sceneJson.getInt("canvasWidth", sceneWidth);
+            sceneHeight = sceneJson.getInt("canvasHeight", sceneHeight);
         }
 
         batch = new SpriteBatch();
@@ -73,7 +86,7 @@ public class Main extends ApplicationAdapter {
         shapeRenderer = new ShapeRenderer();
 
         camera = new OrthographicCamera();
-        camera.setToOrtho(false, 800, 600);
+        camera.setToOrtho(false, sceneWidth, sceneHeight);
 
         backgroundMusic = Gdx.audio.newMusic(Gdx.files.internal("aldermeshka.mp3"));
         backgroundMusic.setLooping(true);
@@ -91,9 +104,6 @@ public class Main extends ApplicationAdapter {
 
         int completed = 0;
         int total = 4;
-
-        String linerSvg = Gdx.files.internal("liner.svg").readString();
-        blockRanges = parseBlockRanges(linerSvg);
 
         String hamsterSvg = Gdx.files.internal("hamster4.svg").readString();
         float finalHamsterStroke = Math.max(1.5f, Gdx.graphics.getWidth() / 400f);
@@ -126,11 +136,27 @@ public class Main extends ApplicationAdapter {
         blockPixmap.dispose();
         loadingProgress = ++completed / (float) total;
 
-        backgroundPixmap = loadCachedSvg("liner", linerSvg, 800, 600);
+        String backgroundFile = "liner.svg";
+        if (sceneJson != null) {
+            backgroundFile = sceneJson.getString("background", backgroundFile);
+        }
+        FileHandle backgroundHandle = Gdx.files.internal(backgroundFile);
+        String backgroundSvg;
+        try {
+            backgroundSvg = backgroundHandle.readString();
+        } catch (Exception e) {
+            Gdx.app.error("Main", "Failed to load background '" + backgroundFile + "', falling back to liner.svg", e);
+            backgroundFile = "liner.svg";
+            backgroundHandle = Gdx.files.internal(backgroundFile);
+            backgroundSvg = backgroundHandle.readString();
+        }
+        String cacheName = ("scene-" + backgroundFile).replace('/', '_').replace('\\', '_').replace('.', '_');
+        backgroundPixmap = loadCachedSvg(cacheName, backgroundSvg, sceneWidth, sceneHeight);
         backgroundTexture = new Texture(backgroundPixmap);
         loadingProgress = ++completed / (float) total;
 
         calculateCorridors();
+        sceneBlocks = loadSceneBlocks(sceneJson);
         controlRenderer = new OnscreenControlRenderer();
         resetGame();
         loading = false;
@@ -178,43 +204,144 @@ public class Main extends ApplicationAdapter {
         corridorCenters = centers.stream().mapToInt(Integer::intValue).toArray();
     }
 
-    private float[][] parseBlockRanges(String svg) {
-        java.util.ArrayList<Float> ys = new java.util.ArrayList<>();
-        try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.StringReader(svg))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                if (line.contains("stroke-width=\"2\"") && line.contains("H800")) {
-                    int m = line.indexOf("M0 ");
-                    int h = line.indexOf("H800", m);
-                    if (m >= 0 && h >= 0) {
-                        try {
-                            ys.add(Float.parseFloat(line.substring(m + 3, h)));
-                        } catch (NumberFormatException ignored) {
-                        }
-                    }
-                }
-            }
-        } catch (Exception ignored) {
+    private Array<Block> loadSceneBlocks(JsonValue sceneJson) {
+        Array<Block> result = new Array<>();
+        if (sceneJson == null) {
+            return result;
         }
-        java.util.Collections.sort(ys);
-        java.util.ArrayList<float[]> pairs = new java.util.ArrayList<>();
-        for (int i = 0; i + 1 < ys.size();) {
-            float y1 = ys.get(i);
-            float y2 = ys.get(i + 1);
-            if (y2 - y1 < 60f) {
-                float topFromSvg = y1 + GUIDE_STROKE_WIDTH;
-                float bottomFromSvg = y2 - GUIDE_STROKE_WIDTH;
-                if (bottomFromSvg > topFromSvg) {
-                    float top = 600f - bottomFromSvg;
-                    float bottom = 600f - topFromSvg;
-                    pairs.add(new float[]{top, bottom});
-                }
-                i += 2;
-            } else {
-                i++;
+        JsonValue blocksJson = sceneJson.get("blocks");
+        if (blocksJson == null) {
+            return result;
+        }
+        for (JsonValue blockValue : blocksJson) {
+            String blockFile = blockValue.getString("block", null);
+            if (blockFile == null) {
+                continue;
+            }
+            BlockTemplate template = loadBlockTemplate(blockFile);
+            if (template == null) {
+                continue;
+            }
+            float offsetX = blockValue.getFloat("x", 0f);
+            float offsetY = blockValue.getFloat("y", 0f);
+            Block block = instantiateBlock(template, offsetX, offsetY);
+            if (block != null) {
+                result.add(block);
             }
         }
-        return pairs.toArray(new float[0][]);
+        return result;
+    }
+
+    private BlockTemplate loadBlockTemplate(String blockFile) {
+        if (blockFile == null || blockFile.isEmpty()) {
+            return null;
+        }
+        String resolved = blockFile.contains("/") ? blockFile : "blocks/" + blockFile;
+        BlockTemplate cached = blockTemplateCache.get(resolved);
+        if (cached != null) {
+            return cached;
+        }
+        JsonValue json;
+        try {
+            json = new JsonReader().parse(Gdx.files.internal(resolved));
+        } catch (Exception e) {
+            Gdx.app.error("Main", "Failed to load block template '" + resolved + "'", e);
+            return null;
+        }
+        RectangleData body = parseRectangle(json.get("body"));
+        Array<RectangleData> ascenders = parseRectangleArray(json.get("ascenders"));
+        Array<RectangleData> descenders = parseRectangleArray(json.get("descenders"));
+        float templateCanvasHeight = json.getFloat("canvasHeight", sceneHeight);
+        BlockTemplate template = new BlockTemplate(templateCanvasHeight, body, ascenders, descenders);
+        blockTemplateCache.put(resolved, template);
+        return template;
+    }
+
+    private static RectangleData parseRectangle(JsonValue value) {
+        if (value == null) {
+            return null;
+        }
+        float x = value.getFloat("x", 0f);
+        float y = value.getFloat("y", 0f);
+        float width = value.getFloat("width", 0f);
+        float height = value.getFloat("height", 0f);
+        return new RectangleData(x, y, width, height);
+    }
+
+    private static Array<RectangleData> parseRectangleArray(JsonValue arrayValue) {
+        Array<RectangleData> result = new Array<>();
+        if (arrayValue == null) {
+            return result;
+        }
+        for (JsonValue value : arrayValue) {
+            RectangleData data = parseRectangle(value);
+            if (data != null) {
+                result.add(data);
+            }
+        }
+        return result;
+    }
+
+    private Block instantiateBlock(BlockTemplate template, float offsetX, float offsetY) {
+        if (template == null || template.body == null) {
+            return null;
+        }
+        Rectangle body = convertRectangle(template.body, offsetX, offsetY, template.canvasHeight);
+        Array<Rectangle> ascenders = convertRectangles(template.ascenders, offsetX, offsetY, template.canvasHeight);
+        Array<Rectangle> descenders = convertRectangles(template.descenders, offsetX, offsetY, template.canvasHeight);
+        return new Block(body, ascenders, descenders);
+    }
+
+    private Array<Rectangle> convertRectangles(Array<RectangleData> source, float offsetX, float offsetY, float canvasHeight) {
+        Array<Rectangle> result = new Array<>();
+        if (source == null) {
+            return result;
+        }
+        for (RectangleData data : source) {
+            Rectangle rect = convertRectangle(data, offsetX, offsetY, canvasHeight);
+            if (rect != null) {
+                result.add(rect);
+            }
+        }
+        return result;
+    }
+
+    private Rectangle convertRectangle(RectangleData data, float offsetX, float offsetY, float canvasHeight) {
+        if (data == null) {
+            return null;
+        }
+        float x = data.x + offsetX;
+        float topY = data.y + offsetY;
+        float y = canvasHeight - (topY + data.height);
+        return new Rectangle(x, y, data.width, data.height);
+    }
+
+    private static class RectangleData {
+        final float x;
+        final float y;
+        final float width;
+        final float height;
+
+        RectangleData(float x, float y, float width, float height) {
+            this.x = x;
+            this.y = y;
+            this.width = width;
+            this.height = height;
+        }
+    }
+
+    private static class BlockTemplate {
+        final float canvasHeight;
+        final RectangleData body;
+        final Array<RectangleData> ascenders;
+        final Array<RectangleData> descenders;
+
+        BlockTemplate(float canvasHeight, RectangleData body, Array<RectangleData> ascenders, Array<RectangleData> descenders) {
+            this.canvasHeight = canvasHeight;
+            this.body = body;
+            this.ascenders = ascenders != null ? ascenders : new Array<>();
+            this.descenders = descenders != null ? descenders : new Array<>();
+        }
     }
 
     private static float computeStrokeScale(String svg, float finalStroke) {
@@ -275,50 +402,35 @@ public class Main extends ApplicationAdapter {
         gameOver = false;
         hamsterWin = false;
 
-        hamster = new Rectangle(400 - 32, 300 - 32, 64, 64);
+        hamster = new Rectangle(sceneWidth / 2f - 32f, sceneHeight / 2f - 32f, 64, 64);
 
         blocks = new Array<>();
-        grid = new boolean[GRID_WIDTH][GRID_HEIGHT];
+        for (Block block : sceneBlocks) {
+            blocks.add(block);
+        }
 
-        // generate blocks that span between thin horizontal lines
-        for (int i = 0; i < 10; i++) {
-            int attempts = 0;
-            boolean placed = false;
-            while (attempts++ < 1000 && !placed) {
-                int pairIndex = MathUtils.random(blockRanges.length - 1);
-                float top = blockRanges[pairIndex][0];
-                float bottom = blockRanges[pairIndex][1];
-                float height = bottom - top;
-                int gx = MathUtils.random(0, GRID_WIDTH - 1);
-                float x = gx * CELL_SIZE;
-                int startCellY = (int) (top / CELL_SIZE);
-                int endCellY = (int) ((bottom - 1) / CELL_SIZE);
-                boolean occupied = false;
-                for (int cy = startCellY; cy <= endCellY; cy++) {
-                    if (grid[gx][cy]) {
-                        occupied = true;
-                        break;
-                    }
-                }
-                if (occupied) continue;
-                Block block = new Block(new Rectangle(x, top, CELL_SIZE, height));
-                if (hamster.overlaps(block.body)) continue;
-                blocks.add(block);
-                for (int cy = startCellY; cy <= endCellY; cy++) {
-                    grid[gx][cy] = true;
-                }
-                placed = true;
+        grid = new boolean[GRID_WIDTH][GRID_HEIGHT];
+        for (Block block : blocks) {
+            markGridCells(block.body);
+            for (Rectangle ascender : block.ascenders) {
+                markGridCells(ascender);
+            }
+            for (Rectangle descender : block.descenders) {
+                markGridCells(descender);
             }
         }
+
         int hx = (int) (hamster.x / CELL_SIZE);
         int hy = (int) (hamster.y / CELL_SIZE);
         boolean placed = false;
+        int corridorCount = corridorCenters != null ? corridorCenters.length : 0;
         for (int attempt = 0; attempt < 1000 && !placed; attempt++) {
             int gx = MathUtils.random(0, GRID_WIDTH - 1);
-            int corridorIndex = MathUtils.random(0, corridorCenters.length - 1);
-            int centerY = corridorCenters[corridorIndex];
+            int centerY = corridorCount > 0
+                    ? corridorCenters[MathUtils.random(0, corridorCount - 1)]
+                    : sceneHeight / 2;
             int yTop = centerY - 32;
-            if (yTop < 0 || yTop + 64 > 600) continue;
+            if (yTop < 0 || yTop + 64 > sceneHeight) continue;
             int gy = yTop / CELL_SIZE;
             if (gy < 0 || gy + 2 >= GRID_HEIGHT) continue;
             if (grid[gx][gy] || grid[gx][gy + 1] || grid[gx][gy + 2]) continue;
@@ -331,7 +443,6 @@ public class Main extends ApplicationAdapter {
 
             if (canReachAbove && isReachable(hx, hy, gx, gy)) {
                 grade = new Rectangle(gx * CELL_SIZE, yTop, 64, 64);
-                System.out.println("GRADE_CENTER_Y=" + (grade.y + grade.height / 2));
                 placed = true;
             }
         }
@@ -344,6 +455,77 @@ public class Main extends ApplicationAdapter {
             gradeDirection = new Vector2(MathUtils.random(-1f, 1f), MathUtils.random(-1f, 1f));
         } while (gradeDirection.isZero());
         gradeDirection.nor();
+    }
+
+    private void markGridCells(Rectangle rect) {
+        if (rect == null || grid == null) {
+            return;
+        }
+        float maxX = rect.x + rect.width;
+        float maxY = rect.y + rect.height;
+        if (maxX <= 0 || maxY <= 0) {
+            return;
+        }
+        int startX = Math.max(0, MathUtils.floor(rect.x / CELL_SIZE));
+        int endX = MathUtils.floor((maxX - 0.001f) / CELL_SIZE);
+        if (endX < startX) {
+            return;
+        }
+        endX = Math.min(GRID_WIDTH - 1, endX);
+        int startY = Math.max(0, MathUtils.floor(rect.y / CELL_SIZE));
+        int endY = MathUtils.floor((maxY - 0.001f) / CELL_SIZE);
+        if (endY < startY) {
+            return;
+        }
+        endY = Math.min(GRID_HEIGHT - 1, endY);
+        for (int gx = startX; gx <= endX; gx++) {
+            for (int gy = startY; gy <= endY; gy++) {
+                grid[gx][gy] = true;
+            }
+        }
+    }
+
+    private void resolveHamsterCollision(Rectangle obstacle, Rectangle intersection) {
+        if (obstacle == null) {
+            return;
+        }
+        resolveCollision(hamster, obstacle, intersection);
+    }
+
+    private void handleGradeCollision(Rectangle obstacle, Rectangle intersection) {
+        if (obstacle == null) {
+            return;
+        }
+        int axis = resolveCollision(grade, obstacle, intersection);
+        if (axis == 0) {
+            gradeDirection.x = -gradeDirection.x;
+        } else if (axis == 1) {
+            gradeDirection.y = -gradeDirection.y;
+        }
+    }
+
+    private int resolveCollision(Rectangle mover, Rectangle obstacle, Rectangle intersection) {
+        if (obstacle == null) {
+            return -1;
+        }
+        if (!Intersector.intersectRectangles(mover, obstacle, intersection)) {
+            return -1;
+        }
+        if (intersection.width < intersection.height) {
+            if (mover.x < obstacle.x) {
+                mover.x -= intersection.width;
+            } else {
+                mover.x += intersection.width;
+            }
+            return 0;
+        } else {
+            if (mover.y < obstacle.y) {
+                mover.y -= intersection.height;
+            } else {
+                mover.y += intersection.height;
+            }
+            return 1;
+        }
     }
 
     private boolean isReachable(int startX, int startY, int targetX, int targetY) {
@@ -552,7 +734,7 @@ public class Main extends ApplicationAdapter {
         batch.setProjectionMatrix(camera.combined);
 
         batch.begin();
-        batch.draw(backgroundTexture, 0, 0, 800, 600);
+        batch.draw(backgroundTexture, 0, 0, sceneWidth, sceneHeight);
         batch.end();
 
         batch.begin();
@@ -598,57 +780,40 @@ public class Main extends ApplicationAdapter {
             if (Gdx.input.isKeyPressed(Input.Keys.DOWN)) hamster.y -= 200 * Gdx.graphics.getDeltaTime();
         }
 
-        hamster.x = MathUtils.clamp(hamster.x, 0, 800 - hamster.width);
-        hamster.y = MathUtils.clamp(hamster.y, 0, 600 - hamster.height);
+        hamster.x = MathUtils.clamp(hamster.x, 0, sceneWidth - hamster.width);
+        hamster.y = MathUtils.clamp(hamster.y, 0, sceneHeight - hamster.height);
 
         grade.x += gradeDirection.x * 100 * Gdx.graphics.getDeltaTime();
         grade.y += gradeDirection.y * 100 * Gdx.graphics.getDeltaTime();
 
-        if (grade.x < 0 || grade.x > 800 - 64) gradeDirection.x = -gradeDirection.x;
-        if (grade.y < 0 || grade.y > 600 - 64) gradeDirection.y = -gradeDirection.y;
+        if (grade.x < 0 || grade.x > sceneWidth - grade.width) gradeDirection.x = -gradeDirection.x;
+        if (grade.y < 0 || grade.y > sceneHeight - grade.height) gradeDirection.y = -gradeDirection.y;
 
-        for (Block block : blocks) {
-            Rectangle body = block.body;
-            Rectangle intersection = new Rectangle();
-            if (Intersector.intersectRectangles(hamster, body, intersection)) {
-                if (intersection.width < intersection.height) {
-                    if (hamster.x < body.x) {
-                        hamster.x -= intersection.width;
-                    } else {
-                        hamster.x += intersection.width;
-                    }
-                } else {
-                    if (hamster.y < body.y) {
-                        hamster.y -= intersection.height;
-                    } else {
-                        hamster.y += intersection.height;
-                    }
+        Rectangle intersection = new Rectangle();
+        if (blocks != null) {
+            for (Block block : blocks) {
+                resolveHamsterCollision(block.body, intersection);
+                for (Rectangle ascender : block.ascenders) {
+                    resolveHamsterCollision(ascender, intersection);
                 }
-            }
+                for (Rectangle descender : block.descenders) {
+                    resolveHamsterCollision(descender, intersection);
+                }
 
-            if (Intersector.intersectRectangles(grade, body, intersection)) {
-                if (intersection.width < intersection.height) {
-                    if (grade.x < body.x) {
-                        grade.x -= intersection.width;
-                    } else {
-                        grade.x += intersection.width;
-                    }
-                    gradeDirection.x = -gradeDirection.x;
-                } else {
-                    if (grade.y < body.y) {
-                        grade.y -= intersection.height;
-                    } else {
-                        grade.y += intersection.height;
-                    }
-                    gradeDirection.y = -gradeDirection.y;
+                handleGradeCollision(block.body, intersection);
+                for (Rectangle ascender : block.ascenders) {
+                    handleGradeCollision(ascender, intersection);
+                }
+                for (Rectangle descender : block.descenders) {
+                    handleGradeCollision(descender, intersection);
                 }
             }
         }
 
-        hamster.x = MathUtils.clamp(hamster.x, 0, 800 - hamster.width);
-        hamster.y = MathUtils.clamp(hamster.y, 0, 600 - hamster.height);
-        grade.x = MathUtils.clamp(grade.x, 0, 800 - grade.width);
-        grade.y = MathUtils.clamp(grade.y, 0, 600 - grade.height);
+        hamster.x = MathUtils.clamp(hamster.x, 0, sceneWidth - hamster.width);
+        hamster.y = MathUtils.clamp(hamster.y, 0, sceneHeight - hamster.height);
+        grade.x = MathUtils.clamp(grade.x, 0, sceneWidth - grade.width);
+        grade.y = MathUtils.clamp(grade.y, 0, sceneHeight - grade.height);
 
         if (hamster.overlaps(grade)) {
             if (hamster.y >= grade.y + grade.height - 5) {
