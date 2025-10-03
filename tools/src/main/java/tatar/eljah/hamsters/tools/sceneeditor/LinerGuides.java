@@ -113,7 +113,7 @@ final class LinerGuides {
             }
             group.add(y);
             if (group.size() == 4) {
-                stripes.add(new BodyStripe(group.get(1), group.get(2)));
+                stripes.add(new BodyStripe(group.get(0), group.get(1)));
                 group.clear();
             }
         }
