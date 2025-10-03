@@ -1,5 +1,6 @@
 package tatar.eljah.hamsters;
 
+import com.badlogic.gdx.Application;
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
@@ -63,6 +64,10 @@ public class Main extends ApplicationAdapter {
 
     @Override
     public void create() {
+        if (Gdx.app.getType() == Application.ApplicationType.WebGL) {
+            Svg2Pixmap.generateScale = 1;
+        }
+
         batch = new SpriteBatch();
         font = new BitmapFont();
         shapeRenderer = new ShapeRenderer();
@@ -80,7 +85,9 @@ public class Main extends ApplicationAdapter {
 
         loading = true;
         loadingProgress = 0f;
-        cacheDir = PixmapCache.resolveCacheDir();
+        if (PixmapCache.isSupported()) {
+            cacheDir = PixmapCache.resolveCacheDir();
+        }
 
         int completed = 0;
         int total = 4;
@@ -127,6 +134,7 @@ public class Main extends ApplicationAdapter {
         controlRenderer = new OnscreenControlRenderer();
         resetGame();
         loading = false;
+        Gdx.app.log("Main", "Assets loaded");
     }
 
     private void calculateCorridors() {
@@ -221,6 +229,11 @@ public class Main extends ApplicationAdapter {
     }
 
     private Pixmap loadCachedSvg(String name, String svg, int width, int height) {
+        if (Gdx.app.getType() == Application.ApplicationType.WebGL) {
+            // The HTML backend cannot access the desktop cache, but CPU rasterization works reliably.
+            return Svg2Pixmap.svg2Pixmap(svg, width, height);
+        }
+
         if (PixmapCache.isSupported()) {
             String hash = md5(svg + width + "x" + height);
             FileHandle file = cacheDir.child(name + "-" + hash + ".png");
