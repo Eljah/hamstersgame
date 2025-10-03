@@ -114,7 +114,9 @@ final class LinerGuides {
             group.add(y);
             if (group.size() == 4) {
                 stripes.add(new BodyStripe(group.get(1), group.get(2)));
+                double carry = group.get(3);
                 group.clear();
+                group.add(carry);
             }
         }
         return Collections.unmodifiableList(stripes);
