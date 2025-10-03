@@ -77,6 +77,14 @@ public class BlockEditorFrame extends JFrame {
         remove.addActionListener(e -> statusLabel.setText(editorPanel.removeSelectedRegion()));
         controls.add(remove);
 
+        JButton moveUp = new JButton("Move Up");
+        moveUp.addActionListener(e -> statusLabel.setText(editorPanel.moveSelectedRegionUpOneLine()));
+        controls.add(moveUp);
+
+        JButton moveDown = new JButton("Move Down");
+        moveDown.addActionListener(e -> statusLabel.setText(editorPanel.moveSelectedRegionDownOneLine()));
+        controls.add(moveDown);
+
         JButton save = new JButton("Save");
         save.addActionListener(this::onSave);
         controls.add(save);
