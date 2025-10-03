@@ -32,7 +32,6 @@ public class Main extends ApplicationAdapter {
     private SpriteBatch batch;
     private Texture hamsterTexture;
     private Texture gradeTexture;
-    private Texture blockTexture;
     private Texture backgroundTexture;
     private Pixmap backgroundPixmap;
     private BitmapFont font;
@@ -103,7 +102,7 @@ public class Main extends ApplicationAdapter {
         }
 
         int completed = 0;
-        int total = 4;
+        int total = 3;
 
         String hamsterSvg = Gdx.files.internal("hamster4.svg").readString();
         float finalHamsterStroke = Math.max(1.5f, Gdx.graphics.getWidth() / 400f);
@@ -121,19 +120,6 @@ public class Main extends ApplicationAdapter {
         Pixmap gradePixmap = loadCachedSvg("grade", Gdx.files.internal("grade.svg").readString(), 64, 64);
         gradeTexture = new Texture(gradePixmap);
         gradePixmap.dispose();
-        loadingProgress = ++completed / (float) total;
-
-        String blockSvg = Gdx.files.internal("block.svg").readString();
-        float finalBlockStroke = Math.max(1.5f, Gdx.graphics.getWidth() / 400f);
-        float blockStrokeScale = computeStrokeScale(blockSvg, finalBlockStroke);
-        blockSvg = blockSvg.replaceAll("stroke-width=\\\"[0-9.]+\\\"",
-                "stroke-width=\\\"" + blockStrokeScale + "\\\"");
-        Pixmap blockPixmap = loadCachedSvg("block", blockSvg, 256, 256);
-        applyBallpointEffect(blockPixmap, 0.7f);
-        blockPixmap = trimTransparent(blockPixmap);
-        blockTexture = new Texture(blockPixmap);
-        blockTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
-        blockPixmap.dispose();
         loadingProgress = ++completed / (float) total;
 
         String backgroundFile = "liner.svg";
@@ -242,8 +228,10 @@ public class Main extends ApplicationAdapter {
             return cached;
         }
         JsonValue json;
+        FileHandle jsonHandle;
         try {
-            json = new JsonReader().parse(Gdx.files.internal(resolved));
+            jsonHandle = Gdx.files.internal(resolved);
+            json = new JsonReader().parse(jsonHandle);
         } catch (Exception e) {
             Gdx.app.error("Main", "Failed to load block template '" + resolved + "'", e);
             return null;
@@ -251,8 +239,29 @@ public class Main extends ApplicationAdapter {
         RectangleData body = parseRectangle(json.get("body"));
         Array<RectangleData> ascenders = parseRectangleArray(json.get("ascenders"));
         Array<RectangleData> descenders = parseRectangleArray(json.get("descenders"));
+        float templateCanvasWidth = json.getFloat("canvasWidth", sceneWidth);
         float templateCanvasHeight = json.getFloat("canvasHeight", sceneHeight);
-        BlockTemplate template = new BlockTemplate(templateCanvasHeight, body, ascenders, descenders);
+        float svgScale = json.getFloat("scale", 1f);
+        float svgY = json.getFloat("svgY", 0f);
+        RectangleData svgBounds = parseRectangle(json.get("svgBounds"));
+
+        Texture texture = null;
+        RectangleData drawBounds = null;
+        String svgFileName = json.getString("svg", null);
+        if (svgFileName != null) {
+            FileHandle svgHandle = jsonHandle.sibling(svgFileName);
+            if (!svgHandle.exists()) {
+                Gdx.app.error("Main", "SVG '" + svgHandle.path() + "' for block template '" + resolved + "' not found");
+            } else {
+                BlockVisual visual = loadBlockVisual(resolved, svgHandle, svgBounds, svgScale, svgY, templateCanvasWidth, templateCanvasHeight);
+                if (visual != null) {
+                    texture = visual.texture;
+                    drawBounds = visual.drawBounds;
+                }
+            }
+        }
+
+        BlockTemplate template = new BlockTemplate(templateCanvasWidth, templateCanvasHeight, body, ascenders, descenders, drawBounds, texture);
         blockTemplateCache.put(resolved, template);
         return template;
     }
@@ -283,13 +292,17 @@ public class Main extends ApplicationAdapter {
     }
 
     private Block instantiateBlock(BlockTemplate template, float offsetX, float offsetY) {
-        if (template == null || template.body == null) {
+        if (template == null) {
             return null;
         }
         Rectangle body = convertRectangle(template.body, offsetX, offsetY, template.canvasHeight);
         Array<Rectangle> ascenders = convertRectangles(template.ascenders, offsetX, offsetY, template.canvasHeight);
         Array<Rectangle> descenders = convertRectangles(template.descenders, offsetX, offsetY, template.canvasHeight);
-        return new Block(body, ascenders, descenders);
+        if (body == null && ascenders.size == 0 && descenders.size == 0) {
+            return null;
+        }
+        Rectangle drawBounds = convertRectangle(template.drawBounds, offsetX, offsetY, template.canvasHeight);
+        return new Block(body, ascenders, descenders, drawBounds, template.texture);
     }
 
     private Array<Rectangle> convertRectangles(Array<RectangleData> source, float offsetX, float offsetY, float canvasHeight) {
@@ -316,6 +329,84 @@ public class Main extends ApplicationAdapter {
         return new Rectangle(x, y, data.width, data.height);
     }
 
+    private BlockVisual loadBlockVisual(String cacheKey,
+                                        FileHandle svgHandle,
+                                        RectangleData svgBounds,
+                                        float svgScale,
+                                        float svgY,
+                                        float canvasWidth,
+                                        float canvasHeight) {
+        String svg;
+        try {
+            svg = svgHandle.readString();
+        } catch (Exception e) {
+            Gdx.app.error("Main", "Failed to read SVG '" + svgHandle.path() + "'", e);
+            return null;
+        }
+
+        SvgViewBox viewBox = parseSvgViewBox(svg);
+        if (viewBox == null) {
+            float fallbackWidth = svgBounds != null ? svgBounds.width : canvasWidth;
+            float fallbackHeight = svgBounds != null ? svgBounds.height : canvasHeight;
+            float safeScale = svgScale == 0f ? 1f : svgScale;
+            viewBox = new SvgViewBox(fallbackWidth / safeScale, fallbackHeight / safeScale);
+        }
+
+        int targetWidth = Math.max(1, MathUtils.ceil(viewBox.width * svgScale));
+        int targetHeight = Math.max(1, MathUtils.ceil(viewBox.height * svgScale));
+
+        float finalBlockStroke = Math.max(1.5f, Gdx.graphics.getWidth() / 400f);
+        float strokeScale = computeStrokeScale(svg, finalBlockStroke);
+        String adjustedSvg = svg.replaceAll("stroke-width=\\\"[0-9.]+\\\"",
+                "stroke-width=\\\"" + strokeScale + "\\\"");
+
+        Pixmap pixmap = loadCachedSvg("block-" + sanitizeCacheKey(cacheKey), adjustedSvg, targetWidth, targetHeight);
+
+        if (svgBounds != null) {
+            int cropX = Math.max(0, MathUtils.floor(svgBounds.x * svgScale));
+            int cropY = Math.max(0, MathUtils.floor(svgBounds.y * svgScale));
+            int cropWidth = Math.max(1, MathUtils.ceil(svgBounds.width * svgScale));
+            int cropHeight = Math.max(1, MathUtils.ceil(svgBounds.height * svgScale));
+            cropWidth = Math.min(cropWidth, pixmap.getWidth() - cropX);
+            cropHeight = Math.min(cropHeight, pixmap.getHeight() - cropY);
+            if (cropWidth > 0 && cropHeight > 0) {
+                pixmap = cropPixmap(pixmap, cropX, cropY, cropWidth, cropHeight);
+            }
+        }
+
+        applyBallpointEffect(pixmap, 0.7f);
+        Texture texture = new Texture(pixmap);
+        texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+
+        float drawWidth = svgBounds != null ? svgBounds.width * svgScale : pixmap.getWidth();
+        float drawHeight = svgBounds != null ? svgBounds.height * svgScale : pixmap.getHeight();
+        RectangleData drawBounds = new RectangleData(
+                (canvasWidth - drawWidth) / 2f,
+                svgY,
+                drawWidth,
+                drawHeight
+        );
+
+        pixmap.dispose();
+        return new BlockVisual(texture, drawBounds);
+    }
+
+    private static String sanitizeCacheKey(String key) {
+        return key.replace('/', '_').replace('\\', '_');
+    }
+
+    private Pixmap cropPixmap(Pixmap source, int x, int y, int width, int height) {
+        width = Math.max(1, Math.min(width, source.getWidth() - x));
+        height = Math.max(1, Math.min(height, source.getHeight() - y));
+        if (width <= 0 || height <= 0) {
+            return source;
+        }
+        Pixmap cropped = new Pixmap(width, height, source.getFormat());
+        cropped.drawPixmap(source, 0, 0, x, y, width, height);
+        source.dispose();
+        return cropped;
+    }
+
     private static class RectangleData {
         final float x;
         final float y;
@@ -331,17 +422,61 @@ public class Main extends ApplicationAdapter {
     }
 
     private static class BlockTemplate {
+        final float canvasWidth;
         final float canvasHeight;
         final RectangleData body;
         final Array<RectangleData> ascenders;
         final Array<RectangleData> descenders;
+        final RectangleData drawBounds;
+        final Texture texture;
 
-        BlockTemplate(float canvasHeight, RectangleData body, Array<RectangleData> ascenders, Array<RectangleData> descenders) {
+        BlockTemplate(float canvasWidth,
+                      float canvasHeight,
+                      RectangleData body,
+                      Array<RectangleData> ascenders,
+                      Array<RectangleData> descenders,
+                      RectangleData drawBounds,
+                      Texture texture) {
+            this.canvasWidth = canvasWidth;
             this.canvasHeight = canvasHeight;
             this.body = body;
             this.ascenders = ascenders != null ? ascenders : new Array<>();
             this.descenders = descenders != null ? descenders : new Array<>();
+            this.drawBounds = drawBounds;
+            this.texture = texture;
         }
+    }
+
+    private static class BlockVisual {
+        final Texture texture;
+        final RectangleData drawBounds;
+
+        BlockVisual(Texture texture, RectangleData drawBounds) {
+            this.texture = texture;
+            this.drawBounds = drawBounds;
+        }
+    }
+
+    private static class SvgViewBox {
+        final float width;
+        final float height;
+
+        SvgViewBox(float width, float height) {
+            this.width = width;
+            this.height = height;
+        }
+    }
+
+    private static SvgViewBox parseSvgViewBox(String svg) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("viewBox=\\\"[0-9.+-eE]+ [0-9.+-eE]+ ([0-9.+-eE]+) ([0-9.+-eE]+)\\\"")
+                .matcher(svg);
+        if (matcher.find()) {
+            float width = Float.parseFloat(matcher.group(1));
+            float height = Float.parseFloat(matcher.group(2));
+            return new SvgViewBox(width, height);
+        }
+        return null;
     }
 
     private static float computeStrokeScale(String svg, float finalStroke) {
@@ -741,8 +876,10 @@ public class Main extends ApplicationAdapter {
         batch.draw(hamsterTexture, hamster.x, hamster.y, hamster.width, hamster.height);
         batch.draw(gradeTexture, grade.x, grade.y);
         for (Block block : blocks) {
-            Rectangle body = block.body;
-            batch.draw(blockTexture, body.x, body.y, body.width, body.height);
+            if (block.texture != null && block.drawBounds != null) {
+                Rectangle drawBounds = block.drawBounds;
+                batch.draw(block.texture, drawBounds.x, drawBounds.y, drawBounds.width, drawBounds.height);
+            }
         }
         font.draw(batch, "Hamster: " + hamsterScore, 10, 590);
         font.draw(batch, "Grade: " + gradeScore, 10, 560);
@@ -840,7 +977,6 @@ public class Main extends ApplicationAdapter {
         if (batch != null) batch.dispose();
         if (hamsterTexture != null) hamsterTexture.dispose();
         if (gradeTexture != null) gradeTexture.dispose();
-        if (blockTexture != null) blockTexture.dispose();
         if (backgroundTexture != null) backgroundTexture.dispose();
         if (backgroundPixmap != null) backgroundPixmap.dispose();
         if (font != null) font.dispose();
@@ -849,6 +985,11 @@ public class Main extends ApplicationAdapter {
         if (backgroundMusic != null) {
             backgroundMusic.stop();
             backgroundMusic.dispose();
+        }
+        for (BlockTemplate template : blockTemplateCache.values()) {
+            if (template.texture != null) {
+                template.texture.dispose();
+            }
         }
     }
 }

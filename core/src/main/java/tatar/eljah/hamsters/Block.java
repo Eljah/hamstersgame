@@ -1,5 +1,6 @@
 package tatar.eljah.hamsters;
 
+import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.utils.Array;
 
@@ -17,14 +18,25 @@ public class Block {
     /** Optional solid areas below the line. */
     public final Array<Rectangle> descenders;
 
+    /** Rendering bounds for the block's SVG texture. */
+    public final Rectangle drawBounds;
+    /** Texture that should be rendered for this block. */
+    public final Texture texture;
+
     public Block(Rectangle body) {
-        this(body, null, null);
+        this(body, null, null, null, null);
     }
 
-    public Block(Rectangle body, Array<Rectangle> ascenders, Array<Rectangle> descenders) {
+    public Block(Rectangle body,
+                 Array<Rectangle> ascenders,
+                 Array<Rectangle> descenders,
+                 Rectangle drawBounds,
+                 Texture texture) {
         this.body = body;
         this.ascenders = ascenders != null ? ascenders : new Array<>();
         this.descenders = descenders != null ? descenders : new Array<>();
+        this.drawBounds = drawBounds;
+        this.texture = texture;
     }
 }
 
