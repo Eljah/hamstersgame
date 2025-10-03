@@ -1,0 +1,14 @@
+{
+  "background": "liner.svg",
+  "canvasWidth": 800,
+  "canvasHeight": 600,
+  "blocks": [
+    {"block": "block2.json", "x": -122.000, "y": 0.500},
+    {"block": "block2.json", "x": 64.000, "y": -115.500},
+    {"block": "block2.json", "x": 104.000, "y": -115.500},
+    {"block": "block2.json", "x": 144.000, "y": -115.500},
+    {"block": "block2.json", "x": -192.000, "y": -115.500},
+    {"block": "block2.json", "x": 143.000, "y": 232.000},
+    {"block": "hamster4.json", "x": -245.000, "y": 232.000}
+  ]
+}
