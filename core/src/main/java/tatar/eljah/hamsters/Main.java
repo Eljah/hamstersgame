@@ -18,12 +18,17 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Array;
+import com.badlogic.gdx.utils.JsonReader;
+import com.badlogic.gdx.utils.JsonValue;
+import com.badlogic.gdx.utils.ObjectMap;
+import com.badlogic.gdx.utils.ObjectSet;
+import com.badlogic.gdx.utils.async.AsyncExecutor;
+import com.badlogic.gdx.utils.async.AsyncResult;
+import com.badlogic.gdx.utils.async.AsyncTask;
 import com.badlogic.gdx.files.FileHandle;
 import io.github.fxzjshm.gdx.svg2pixmap.Svg2Pixmap;
 import tatar.eljah.hamsters.PixmapCache;
 
-import java.io.BufferedReader;
-import java.io.StringReader;
 import java.security.MessageDigest;
 import java.nio.charset.StandardCharsets;
 
@@ -31,7 +36,6 @@ public class Main extends ApplicationAdapter {
     private SpriteBatch batch;
     private Texture hamsterTexture;
     private Texture gradeTexture;
-    private Texture blockTexture;
     private Texture backgroundTexture;
     private Pixmap backgroundPixmap;
     private BitmapFont font;
@@ -43,6 +47,7 @@ public class Main extends ApplicationAdapter {
     private Rectangle hamster;
     private Rectangle grade;
     private Array<Block> blocks;
+    private Array<Block> sceneBlocks = new Array<>();
 
     private Vector2 gradeDirection;
     private boolean gameOver;
@@ -59,13 +64,31 @@ public class Main extends ApplicationAdapter {
     private volatile float loadingProgress;
     private FileHandle cacheDir;
     private int[] corridorCenters;
-    private float[][] blockRanges;
-    private static final float GUIDE_STROKE_WIDTH = 2f;
-
+    private final ObjectMap<String, BlockTemplate> blockTemplateCache = new ObjectMap<>();
+    private AsyncExecutor loaderExecutor;
+    private final Array<LoadingStep> loadingSteps = new Array<>();
+    private LoadingStep currentStep;
+    private int currentStepIndex;
+    private float completedWeight;
+    private float totalWeight;
+    private JsonValue sceneJson;
+    private int sceneWidth = 800;
+    private int sceneHeight = 600;
     @Override
     public void create() {
         if (Gdx.app.getType() == Application.ApplicationType.WebGL) {
             Svg2Pixmap.generateScale = 1;
+        }
+
+        sceneJson = null;
+        try {
+            sceneJson = new JsonReader().parse(Gdx.files.internal("scenes/scene.json"));
+        } catch (Exception e) {
+            Gdx.app.error("Main", "Failed to load scene configuration", e);
+        }
+        if (sceneJson != null) {
+            sceneWidth = sceneJson.getInt("canvasWidth", sceneWidth);
+            sceneHeight = sceneJson.getInt("canvasHeight", sceneHeight);
         }
 
         batch = new SpriteBatch();
@@ -73,7 +96,7 @@ public class Main extends ApplicationAdapter {
         shapeRenderer = new ShapeRenderer();
 
         camera = new OrthographicCamera();
-        camera.setToOrtho(false, 800, 600);
+        camera.setToOrtho(false, sceneWidth, sceneHeight);
 
         backgroundMusic = Gdx.audio.newMusic(Gdx.files.internal("aldermeshka.mp3"));
         backgroundMusic.setLooping(true);
@@ -89,52 +112,9 @@ public class Main extends ApplicationAdapter {
             cacheDir = PixmapCache.resolveCacheDir();
         }
 
-        int completed = 0;
-        int total = 4;
-
-        String linerSvg = Gdx.files.internal("liner.svg").readString();
-        blockRanges = parseBlockRanges(linerSvg);
-
-        String hamsterSvg = Gdx.files.internal("hamster4.svg").readString();
-        float finalHamsterStroke = Math.max(1.5f, Gdx.graphics.getWidth() / 400f);
-        float hamsterStrokeScale = computeStrokeScale(hamsterSvg, finalHamsterStroke);
-        hamsterSvg = hamsterSvg.replaceAll("stroke-width=\\\"[0-9.]+\\\"",
-                "stroke-width=\\\"" + hamsterStrokeScale + "\\\"");
-        Pixmap hamsterPixmap = loadCachedSvg("hamster", hamsterSvg, 256, 256);
-        applyBallpointEffect(hamsterPixmap);
-        hamsterPixmap = trimTransparent(hamsterPixmap);
-        hamsterTexture = new Texture(hamsterPixmap);
-        hamsterTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
-        hamsterPixmap.dispose();
-        loadingProgress = ++completed / (float) total;
-
-        Pixmap gradePixmap = loadCachedSvg("grade", Gdx.files.internal("grade.svg").readString(), 64, 64);
-        gradeTexture = new Texture(gradePixmap);
-        gradePixmap.dispose();
-        loadingProgress = ++completed / (float) total;
-
-        String blockSvg = Gdx.files.internal("block.svg").readString();
-        float finalBlockStroke = Math.max(1.5f, Gdx.graphics.getWidth() / 400f);
-        float blockStrokeScale = computeStrokeScale(blockSvg, finalBlockStroke);
-        blockSvg = blockSvg.replaceAll("stroke-width=\\\"[0-9.]+\\\"",
-                "stroke-width=\\\"" + blockStrokeScale + "\\\"");
-        Pixmap blockPixmap = loadCachedSvg("block", blockSvg, 256, 256);
-        applyBallpointEffect(blockPixmap, 0.7f);
-        blockPixmap = trimTransparent(blockPixmap);
-        blockTexture = new Texture(blockPixmap);
-        blockTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
-        blockPixmap.dispose();
-        loadingProgress = ++completed / (float) total;
-
-        backgroundPixmap = loadCachedSvg("liner", linerSvg, 800, 600);
-        backgroundTexture = new Texture(backgroundPixmap);
-        loadingProgress = ++completed / (float) total;
-
-        calculateCorridors();
-        controlRenderer = new OnscreenControlRenderer();
-        resetGame();
-        loading = false;
-        Gdx.app.log("Main", "Assets loaded");
+        loaderExecutor = new AsyncExecutor(1);
+        prepareLoadingSteps();
+        startNextLoadingStep();
     }
 
     private void calculateCorridors() {
@@ -178,43 +158,663 @@ public class Main extends ApplicationAdapter {
         corridorCenters = centers.stream().mapToInt(Integer::intValue).toArray();
     }
 
-    private float[][] parseBlockRanges(String svg) {
-        java.util.ArrayList<Float> ys = new java.util.ArrayList<>();
-        try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.StringReader(svg))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                if (line.contains("stroke-width=\"2\"") && line.contains("H800")) {
-                    int m = line.indexOf("M0 ");
-                    int h = line.indexOf("H800", m);
-                    if (m >= 0 && h >= 0) {
-                        try {
-                            ys.add(Float.parseFloat(line.substring(m + 3, h)));
-                        } catch (NumberFormatException ignored) {
-                        }
+    private Array<Block> loadSceneBlocks(JsonValue sceneJson) {
+        Array<Block> result = new Array<>();
+        if (sceneJson == null) {
+            return result;
+        }
+        JsonValue blocksJson = sceneJson.get("blocks");
+        if (blocksJson == null) {
+            return result;
+        }
+        for (JsonValue blockValue : blocksJson) {
+            String blockFile = blockValue.getString("block", null);
+            if (blockFile == null) {
+                continue;
+            }
+            BlockTemplate template = loadBlockTemplate(blockFile);
+            if (template == null) {
+                continue;
+            }
+            float offsetX = blockValue.getFloat("x", 0f);
+            float offsetY = blockValue.getFloat("y", 0f);
+            Block block = instantiateBlock(template, offsetX, offsetY);
+            if (block != null) {
+                result.add(block);
+            }
+        }
+        return result;
+    }
+
+    private void prepareLoadingSteps() {
+        loadingSteps.clear();
+        currentStep = null;
+        currentStepIndex = 0;
+        completedWeight = 0f;
+        totalWeight = 0f;
+
+        final String hamsterSvgOriginal = Gdx.files.internal("hamster4.svg").readString();
+        final float finalHamsterStroke = Math.max(1.5f, Gdx.graphics.getWidth() / 400f);
+        final float hamsterStrokeScale = computeStrokeScale(hamsterSvgOriginal, finalHamsterStroke);
+        final String hamsterSvg = hamsterSvgOriginal.replaceAll("stroke-width=\\\"[0-9.]+\\\"",
+                "stroke-width=\\\"" + hamsterStrokeScale + "\\\"");
+        loadingSteps.add(new SvgTextureStep(1f, "hamster", hamsterSvg, 256, 256,
+                new PixmapProcessor() {
+                    @Override
+                    public Pixmap process(Pixmap pixmap) {
+                        applyBallpointEffect(pixmap);
+                        return trimTransparent(pixmap);
+                    }
+                },
+                new PixmapConsumer() {
+                    @Override
+                    public void accept(Pixmap pixmap) {
+                        hamsterTexture = new Texture(pixmap);
+                        hamsterTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+                        pixmap.dispose();
+                    }
+                }));
+
+        final String gradeSvg = Gdx.files.internal("grade.svg").readString();
+        loadingSteps.add(new SvgTextureStep(1f, "grade", gradeSvg, 64, 64,
+                null,
+                new PixmapConsumer() {
+                    @Override
+                    public void accept(Pixmap pixmap) {
+                        gradeTexture = new Texture(pixmap);
+                        pixmap.dispose();
+                    }
+                }));
+
+        String backgroundFile = "liner.svg";
+        if (sceneJson != null) {
+            backgroundFile = sceneJson.getString("background", backgroundFile);
+        }
+        FileHandle backgroundHandle = Gdx.files.internal(backgroundFile);
+        String backgroundSvg;
+        try {
+            backgroundSvg = backgroundHandle.readString();
+        } catch (Exception e) {
+            Gdx.app.error("Main", "Failed to load background '" + backgroundFile + "', falling back to liner.svg", e);
+            backgroundFile = "liner.svg";
+            backgroundHandle = Gdx.files.internal(backgroundFile);
+            backgroundSvg = backgroundHandle.readString();
+        }
+        final String backgroundCacheName = ("scene-" + backgroundFile).replace('/', '_').replace('\\', '_').replace('.', '_');
+        final String backgroundSvgFinal = backgroundSvg;
+        loadingSteps.add(new SvgTextureStep(1f, backgroundCacheName, backgroundSvgFinal, sceneWidth, sceneHeight,
+                null,
+                new PixmapConsumer() {
+                    @Override
+                    public void accept(Pixmap pixmap) {
+                        backgroundPixmap = pixmap;
+                        backgroundTexture = new Texture(backgroundPixmap);
+                    }
+                }));
+
+        ObjectSet<String> blockFiles = new ObjectSet<>();
+        if (sceneJson != null) {
+            JsonValue blocksJson = sceneJson.get("blocks");
+            if (blocksJson != null) {
+                for (JsonValue blockValue : blocksJson) {
+                    String blockFile = blockValue.getString("block", null);
+                    if (blockFile == null) {
+                        continue;
+                    }
+                    String resolved = blockFile.contains("/") ? blockFile : "blocks/" + blockFile;
+                    blockFiles.add(resolved);
+                }
+            }
+        }
+
+        for (String resolved : blockFiles) {
+            loadingSteps.add(new BlockTemplateStep(resolved));
+        }
+
+        totalWeight = 0f;
+        for (LoadingStep step : loadingSteps) {
+            totalWeight += step.getWeight();
+        }
+        if (totalWeight <= 0f) {
+            totalWeight = 1f;
+        }
+    }
+
+    private void startNextLoadingStep() {
+        if (currentStepIndex < loadingSteps.size) {
+            currentStep = loadingSteps.get(currentStepIndex);
+            currentStep.start();
+        } else {
+            currentStep = null;
+            if (loading) {
+                finishLoading();
+            }
+        }
+    }
+
+    private void updateLoading() {
+        if (!loading) {
+            return;
+        }
+        if (currentStep == null && currentStepIndex < loadingSteps.size) {
+            startNextLoadingStep();
+        }
+
+        float currentContribution = 0f;
+        if (currentStep != null) {
+            if (currentStep.update()) {
+                completedWeight += currentStep.getWeight();
+                currentStep = null;
+                currentStepIndex++;
+                if (currentStepIndex >= loadingSteps.size) {
+                    loadingProgress = completedWeight / totalWeight;
+                    finishLoading();
+                    return;
+                }
+                startNextLoadingStep();
+            } else {
+                currentContribution = currentStep.getProgress() * currentStep.getWeight();
+            }
+        }
+        loadingProgress = (completedWeight + currentContribution) / totalWeight;
+    }
+
+    private void finishLoading() {
+        calculateCorridors();
+        sceneBlocks = loadSceneBlocks(sceneJson);
+        controlRenderer = new OnscreenControlRenderer();
+        resetGame();
+        loading = false;
+        Gdx.app.log("Main", "Assets loaded");
+    }
+
+    private BlockTemplate loadBlockTemplate(String blockFile) {
+        if (blockFile == null || blockFile.isEmpty()) {
+            return null;
+        }
+        String resolved = blockFile.contains("/") ? blockFile : "blocks/" + blockFile;
+        BlockTemplate cached = blockTemplateCache.get(resolved);
+        if (cached != null) {
+            return cached;
+        }
+        BlockTemplateLoadResult result = loadBlockTemplateData(resolved);
+        if (result == null) {
+            return null;
+        }
+        Texture texture = null;
+        if (result.pixmap != null) {
+            texture = new Texture(result.pixmap);
+            texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+            result.pixmap.dispose();
+        }
+        BlockTemplate template = new BlockTemplate(result.canvasWidth, result.canvasHeight, result.body, result.ascenders, result.descenders, result.drawBounds, texture);
+        blockTemplateCache.put(resolved, template);
+        return template;
+    }
+
+    private BlockTemplateLoadResult loadBlockTemplateData(String resolved) {
+        JsonValue json;
+        FileHandle jsonHandle;
+        try {
+            jsonHandle = Gdx.files.internal(resolved);
+            json = new JsonReader().parse(jsonHandle);
+        } catch (Exception e) {
+            Gdx.app.error("Main", "Failed to load block template '" + resolved + "'", e);
+            return null;
+        }
+        RectangleData body = parseRectangle(json.get("body"));
+        Array<RectangleData> ascenders = parseRectangleArray(json.get("ascenders"));
+        Array<RectangleData> descenders = parseRectangleArray(json.get("descenders"));
+        float templateCanvasWidth = json.getFloat("canvasWidth", sceneWidth);
+        float templateCanvasHeight = json.getFloat("canvasHeight", sceneHeight);
+        float svgScale = json.getFloat("scale", 1f);
+        float svgY = json.getFloat("svgY", 0f);
+        RectangleData svgBounds = parseRectangle(json.get("svgBounds"));
+
+        Pixmap pixmap = null;
+        RectangleData drawBounds = null;
+        String svgFileName = json.getString("svg", null);
+        if (svgFileName != null) {
+            FileHandle svgHandle = jsonHandle.sibling(svgFileName);
+            if (!svgHandle.exists()) {
+                Gdx.app.error("Main", "SVG '" + svgHandle.path() + "' for block template '" + resolved + "' not found");
+            } else {
+                BlockVisualPixmap visual = loadBlockVisualPixmap(resolved, svgHandle, svgBounds, svgScale, svgY, templateCanvasWidth, templateCanvasHeight);
+                if (visual != null) {
+                    pixmap = visual.pixmap;
+                    drawBounds = visual.drawBounds;
+                }
+            }
+        }
+
+        return new BlockTemplateLoadResult(templateCanvasWidth, templateCanvasHeight, body, ascenders, descenders, drawBounds, pixmap);
+    }
+
+    private static RectangleData parseRectangle(JsonValue value) {
+        if (value == null) {
+            return null;
+        }
+        float x = value.getFloat("x", 0f);
+        float y = value.getFloat("y", 0f);
+        float width = value.getFloat("width", 0f);
+        float height = value.getFloat("height", 0f);
+        return new RectangleData(x, y, width, height);
+    }
+
+    private static Array<RectangleData> parseRectangleArray(JsonValue arrayValue) {
+        Array<RectangleData> result = new Array<>();
+        if (arrayValue == null) {
+            return result;
+        }
+        for (JsonValue value : arrayValue) {
+            RectangleData data = parseRectangle(value);
+            if (data != null) {
+                result.add(data);
+            }
+        }
+        return result;
+    }
+
+    private Block instantiateBlock(BlockTemplate template, float offsetX, float offsetY) {
+        if (template == null) {
+            return null;
+        }
+        Rectangle body = convertRectangle(template.body, offsetX, offsetY, template.canvasHeight);
+        Array<Rectangle> ascenders = convertRectangles(template.ascenders, offsetX, offsetY, template.canvasHeight);
+        Array<Rectangle> descenders = convertRectangles(template.descenders, offsetX, offsetY, template.canvasHeight);
+        if (body == null && ascenders.size == 0 && descenders.size == 0) {
+            return null;
+        }
+        Rectangle drawBounds = convertRectangle(template.drawBounds, offsetX, offsetY, template.canvasHeight);
+        return new Block(body, ascenders, descenders, drawBounds, template.texture);
+    }
+
+    private Array<Rectangle> convertRectangles(Array<RectangleData> source, float offsetX, float offsetY, float canvasHeight) {
+        Array<Rectangle> result = new Array<>();
+        if (source == null) {
+            return result;
+        }
+        for (RectangleData data : source) {
+            Rectangle rect = convertRectangle(data, offsetX, offsetY, canvasHeight);
+            if (rect != null) {
+                result.add(rect);
+            }
+        }
+        return result;
+    }
+
+    private Rectangle convertRectangle(RectangleData data, float offsetX, float offsetY, float canvasHeight) {
+        if (data == null) {
+            return null;
+        }
+        float x = data.x + offsetX;
+        float topY = data.y + offsetY;
+        float y = canvasHeight - (topY + data.height);
+        return new Rectangle(x, y, data.width, data.height);
+    }
+
+    private BlockVisualPixmap loadBlockVisualPixmap(String cacheKey,
+                                                    FileHandle svgHandle,
+                                                    RectangleData svgBounds,
+                                                    float svgScale,
+                                                    float svgY,
+                                                    float canvasWidth,
+                                                    float canvasHeight) {
+        String svg;
+        try {
+            svg = svgHandle.readString();
+        } catch (Exception e) {
+            Gdx.app.error("Main", "Failed to read SVG '" + svgHandle.path() + "'", e);
+            return null;
+        }
+
+        SvgViewBox viewBox = parseSvgViewBox(svg);
+        if (viewBox == null) {
+            float fallbackWidth = svgBounds != null ? svgBounds.width : canvasWidth;
+            float fallbackHeight = svgBounds != null ? svgBounds.height : canvasHeight;
+            float safeScale = svgScale == 0f ? 1f : svgScale;
+            viewBox = new SvgViewBox(fallbackWidth / safeScale, fallbackHeight / safeScale);
+        }
+
+        int targetWidth = Math.max(1, MathUtils.ceil(viewBox.width * svgScale));
+        int targetHeight = Math.max(1, MathUtils.ceil(viewBox.height * svgScale));
+
+        float finalBlockStroke = Math.max(1.5f, Gdx.graphics.getWidth() / 400f);
+        float strokeScale = computeStrokeScale(svg, finalBlockStroke);
+        String adjustedSvg = svg.replaceAll("stroke-width=\\\"[0-9.]+\\\"",
+                "stroke-width=\\\"" + strokeScale + "\\\"");
+
+        Pixmap pixmap = loadCachedSvg("block-" + sanitizeCacheKey(cacheKey), adjustedSvg, targetWidth, targetHeight);
+
+        if (svgBounds != null) {
+            int cropX = Math.max(0, MathUtils.floor(svgBounds.x * svgScale));
+            int cropY = Math.max(0, MathUtils.floor(svgBounds.y * svgScale));
+            int cropWidth = Math.max(1, MathUtils.ceil(svgBounds.width * svgScale));
+            int cropHeight = Math.max(1, MathUtils.ceil(svgBounds.height * svgScale));
+            cropWidth = Math.min(cropWidth, pixmap.getWidth() - cropX);
+            cropHeight = Math.min(cropHeight, pixmap.getHeight() - cropY);
+            if (cropWidth > 0 && cropHeight > 0) {
+                pixmap = cropPixmap(pixmap, cropX, cropY, cropWidth, cropHeight);
+            }
+        }
+
+        applyBallpointEffect(pixmap, 0.7f);
+
+        float drawWidth = svgBounds != null ? svgBounds.width * svgScale : pixmap.getWidth();
+        float drawHeight = svgBounds != null ? svgBounds.height * svgScale : pixmap.getHeight();
+        RectangleData drawBounds = new RectangleData(
+                (canvasWidth - drawWidth) / 2f,
+                svgY,
+                drawWidth,
+                drawHeight
+        );
+
+        return new BlockVisualPixmap(pixmap, drawBounds);
+    }
+
+    private static String sanitizeCacheKey(String key) {
+        return key.replace('/', '_').replace('\\', '_');
+    }
+
+    private Pixmap cropPixmap(Pixmap source, int x, int y, int width, int height) {
+        width = Math.max(1, Math.min(width, source.getWidth() - x));
+        height = Math.max(1, Math.min(height, source.getHeight() - y));
+        if (width <= 0 || height <= 0) {
+            return source;
+        }
+        Pixmap cropped = new Pixmap(width, height, source.getFormat());
+        cropped.drawPixmap(source, 0, 0, x, y, width, height);
+        source.dispose();
+        return cropped;
+    }
+
+    private static class RectangleData {
+        final float x;
+        final float y;
+        final float width;
+        final float height;
+
+        RectangleData(float x, float y, float width, float height) {
+            this.x = x;
+            this.y = y;
+            this.width = width;
+            this.height = height;
+        }
+    }
+
+    private static class BlockTemplate {
+        final float canvasWidth;
+        final float canvasHeight;
+        final RectangleData body;
+        final Array<RectangleData> ascenders;
+        final Array<RectangleData> descenders;
+        final RectangleData drawBounds;
+        final Texture texture;
+
+        BlockTemplate(float canvasWidth,
+                      float canvasHeight,
+                      RectangleData body,
+                      Array<RectangleData> ascenders,
+                      Array<RectangleData> descenders,
+                      RectangleData drawBounds,
+                      Texture texture) {
+            this.canvasWidth = canvasWidth;
+            this.canvasHeight = canvasHeight;
+            this.body = body;
+            this.ascenders = ascenders != null ? ascenders : new Array<>();
+            this.descenders = descenders != null ? descenders : new Array<>();
+            this.drawBounds = drawBounds;
+            this.texture = texture;
+        }
+    }
+
+    private interface LoadingStep {
+        void start();
+
+        boolean update();
+
+        float getProgress();
+
+        float getWeight();
+    }
+
+    private abstract class AsyncLoadingStep implements LoadingStep {
+        private final float weight;
+        private AsyncResult<Void> future;
+        private volatile boolean started;
+        private volatile boolean finished;
+        private volatile float progress;
+        private volatile Throwable failure;
+
+        AsyncLoadingStep(float weight) {
+            this.weight = weight;
+        }
+
+        @Override
+        public void start() {
+            if (started) {
+                return;
+            }
+            started = true;
+            future = loaderExecutor.submit(new AsyncTask<Void>() {
+                @Override
+                public Void call() {
+                    try {
+                        runAsync();
+                    } catch (Throwable t) {
+                        failure = t;
+                    }
+                    return null;
+                }
+            });
+        }
+
+        @Override
+        public boolean update() {
+            if (!started || finished) {
+                return finished;
+            }
+            if (future.isDone()) {
+                finished = true;
+                try {
+                    future.get();
+                } catch (Throwable t) {
+                    if (failure == null) {
+                        failure = t;
                     }
                 }
-            }
-        } catch (Exception ignored) {
-        }
-        java.util.Collections.sort(ys);
-        java.util.ArrayList<float[]> pairs = new java.util.ArrayList<>();
-        for (int i = 0; i + 1 < ys.size();) {
-            float y1 = ys.get(i);
-            float y2 = ys.get(i + 1);
-            if (y2 - y1 < 60f) {
-                float topFromSvg = y1 + GUIDE_STROKE_WIDTH;
-                float bottomFromSvg = y2 - GUIDE_STROKE_WIDTH;
-                if (bottomFromSvg > topFromSvg) {
-                    float top = 600f - bottomFromSvg;
-                    float bottom = 600f - topFromSvg;
-                    pairs.add(new float[]{top, bottom});
+                if (failure != null) {
+                    Gdx.app.error("Main", "Loading step failed", failure);
+                    onAsyncFailed(failure);
+                } else {
+                    completeOnMainThread();
                 }
-                i += 2;
-            } else {
-                i++;
+                return true;
+            }
+            return false;
+        }
+
+        @Override
+        public float getProgress() {
+            return finished ? 1f : progress;
+        }
+
+        protected void setProgress(float progress) {
+            this.progress = MathUtils.clamp(progress, 0f, 1f);
+        }
+
+        @Override
+        public float getWeight() {
+            return weight;
+        }
+
+        protected void onAsyncFailed(Throwable throwable) {
+            // default no-op
+        }
+
+        protected abstract void runAsync();
+
+        protected abstract void completeOnMainThread();
+    }
+
+    private interface PixmapProcessor {
+        Pixmap process(Pixmap pixmap);
+    }
+
+    private interface PixmapConsumer {
+        void accept(Pixmap pixmap);
+    }
+
+    private static class BlockTemplateLoadResult {
+        final float canvasWidth;
+        final float canvasHeight;
+        final RectangleData body;
+        final Array<RectangleData> ascenders;
+        final Array<RectangleData> descenders;
+        final RectangleData drawBounds;
+        final Pixmap pixmap;
+
+        BlockTemplateLoadResult(float canvasWidth,
+                               float canvasHeight,
+                               RectangleData body,
+                               Array<RectangleData> ascenders,
+                               Array<RectangleData> descenders,
+                               RectangleData drawBounds,
+                               Pixmap pixmap) {
+            this.canvasWidth = canvasWidth;
+            this.canvasHeight = canvasHeight;
+            this.body = body;
+            this.ascenders = ascenders;
+            this.descenders = descenders;
+            this.drawBounds = drawBounds;
+            this.pixmap = pixmap;
+        }
+    }
+
+    private class SvgTextureStep extends AsyncLoadingStep {
+        private final String cacheKey;
+        private final String svg;
+        private final int width;
+        private final int height;
+        private final PixmapProcessor processor;
+        private final PixmapConsumer consumer;
+        private Pixmap result;
+
+        SvgTextureStep(float weight,
+                       String cacheKey,
+                       String svg,
+                       int width,
+                       int height,
+                       PixmapProcessor processor,
+                       PixmapConsumer consumer) {
+            super(weight);
+            this.cacheKey = cacheKey;
+            this.svg = svg;
+            this.width = width;
+            this.height = height;
+            this.processor = processor;
+            this.consumer = consumer;
+        }
+
+        @Override
+        protected void runAsync() {
+            Pixmap pixmap = loadCachedSvg(cacheKey, svg, width, height);
+            if (processor != null) {
+                Pixmap processed = processor.process(pixmap);
+                if (processed != null) {
+                    pixmap = processed;
+                }
+            }
+            result = pixmap;
+        }
+
+        @Override
+        protected void completeOnMainThread() {
+            if (result == null) {
+                return;
+            }
+            try {
+                if (consumer != null) {
+                    consumer.accept(result);
+                } else {
+                    result.dispose();
+                }
+            } finally {
+                result = null;
             }
         }
-        return pairs.toArray(new float[0][]);
+    }
+
+    private class BlockTemplateStep extends AsyncLoadingStep {
+        private final String resolved;
+        private BlockTemplateLoadResult result;
+
+        BlockTemplateStep(String resolved) {
+            super(1f);
+            this.resolved = resolved;
+        }
+
+        @Override
+        protected void runAsync() {
+            result = loadBlockTemplateData(resolved);
+        }
+
+        @Override
+        protected void completeOnMainThread() {
+            if (result == null) {
+                return;
+            }
+            try {
+                if (blockTemplateCache.containsKey(resolved)) {
+                    if (result.pixmap != null) {
+                        result.pixmap.dispose();
+                    }
+                    return;
+                }
+                Texture texture = null;
+                if (result.pixmap != null) {
+                    texture = new Texture(result.pixmap);
+                    texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+                    result.pixmap.dispose();
+                }
+                BlockTemplate template = new BlockTemplate(result.canvasWidth, result.canvasHeight, result.body, result.ascenders, result.descenders, result.drawBounds, texture);
+                blockTemplateCache.put(resolved, template);
+            } finally {
+                result = null;
+            }
+        }
+    }
+
+    private static class BlockVisualPixmap {
+        final Pixmap pixmap;
+        final RectangleData drawBounds;
+
+        BlockVisualPixmap(Pixmap pixmap, RectangleData drawBounds) {
+            this.pixmap = pixmap;
+            this.drawBounds = drawBounds;
+        }
+    }
+
+    private static class SvgViewBox {
+        final float width;
+        final float height;
+
+        SvgViewBox(float width, float height) {
+            this.width = width;
+            this.height = height;
+        }
+    }
+
+    private static SvgViewBox parseSvgViewBox(String svg) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("viewBox=\\\"[0-9.+-eE]+ [0-9.+-eE]+ ([0-9.+-eE]+) ([0-9.+-eE]+)\\\"")
+                .matcher(svg);
+        if (matcher.find()) {
+            float width = Float.parseFloat(matcher.group(1));
+            float height = Float.parseFloat(matcher.group(2));
+            return new SvgViewBox(width, height);
+        }
+        return null;
     }
 
     private static float computeStrokeScale(String svg, float finalStroke) {
@@ -275,50 +875,35 @@ public class Main extends ApplicationAdapter {
         gameOver = false;
         hamsterWin = false;
 
-        hamster = new Rectangle(400 - 32, 300 - 32, 64, 64);
+        hamster = new Rectangle(sceneWidth / 2f - 32f, sceneHeight / 2f - 32f, 64, 64);
 
         blocks = new Array<>();
-        grid = new boolean[GRID_WIDTH][GRID_HEIGHT];
+        for (Block block : sceneBlocks) {
+            blocks.add(block);
+        }
 
-        // generate blocks that span between thin horizontal lines
-        for (int i = 0; i < 10; i++) {
-            int attempts = 0;
-            boolean placed = false;
-            while (attempts++ < 1000 && !placed) {
-                int pairIndex = MathUtils.random(blockRanges.length - 1);
-                float top = blockRanges[pairIndex][0];
-                float bottom = blockRanges[pairIndex][1];
-                float height = bottom - top;
-                int gx = MathUtils.random(0, GRID_WIDTH - 1);
-                float x = gx * CELL_SIZE;
-                int startCellY = (int) (top / CELL_SIZE);
-                int endCellY = (int) ((bottom - 1) / CELL_SIZE);
-                boolean occupied = false;
-                for (int cy = startCellY; cy <= endCellY; cy++) {
-                    if (grid[gx][cy]) {
-                        occupied = true;
-                        break;
-                    }
-                }
-                if (occupied) continue;
-                Block block = new Block(new Rectangle(x, top, CELL_SIZE, height));
-                if (hamster.overlaps(block.body)) continue;
-                blocks.add(block);
-                for (int cy = startCellY; cy <= endCellY; cy++) {
-                    grid[gx][cy] = true;
-                }
-                placed = true;
+        grid = new boolean[GRID_WIDTH][GRID_HEIGHT];
+        for (Block block : blocks) {
+            markGridCells(block.body);
+            for (Rectangle ascender : block.ascenders) {
+                markGridCells(ascender);
+            }
+            for (Rectangle descender : block.descenders) {
+                markGridCells(descender);
             }
         }
+
         int hx = (int) (hamster.x / CELL_SIZE);
         int hy = (int) (hamster.y / CELL_SIZE);
         boolean placed = false;
+        int corridorCount = corridorCenters != null ? corridorCenters.length : 0;
         for (int attempt = 0; attempt < 1000 && !placed; attempt++) {
             int gx = MathUtils.random(0, GRID_WIDTH - 1);
-            int corridorIndex = MathUtils.random(0, corridorCenters.length - 1);
-            int centerY = corridorCenters[corridorIndex];
+            int centerY = corridorCount > 0
+                    ? corridorCenters[MathUtils.random(0, corridorCount - 1)]
+                    : sceneHeight / 2;
             int yTop = centerY - 32;
-            if (yTop < 0 || yTop + 64 > 600) continue;
+            if (yTop < 0 || yTop + 64 > sceneHeight) continue;
             int gy = yTop / CELL_SIZE;
             if (gy < 0 || gy + 2 >= GRID_HEIGHT) continue;
             if (grid[gx][gy] || grid[gx][gy + 1] || grid[gx][gy + 2]) continue;
@@ -331,7 +916,6 @@ public class Main extends ApplicationAdapter {
 
             if (canReachAbove && isReachable(hx, hy, gx, gy)) {
                 grade = new Rectangle(gx * CELL_SIZE, yTop, 64, 64);
-                System.out.println("GRADE_CENTER_Y=" + (grade.y + grade.height / 2));
                 placed = true;
             }
         }
@@ -344,6 +928,77 @@ public class Main extends ApplicationAdapter {
             gradeDirection = new Vector2(MathUtils.random(-1f, 1f), MathUtils.random(-1f, 1f));
         } while (gradeDirection.isZero());
         gradeDirection.nor();
+    }
+
+    private void markGridCells(Rectangle rect) {
+        if (rect == null || grid == null) {
+            return;
+        }
+        float maxX = rect.x + rect.width;
+        float maxY = rect.y + rect.height;
+        if (maxX <= 0 || maxY <= 0) {
+            return;
+        }
+        int startX = Math.max(0, MathUtils.floor(rect.x / CELL_SIZE));
+        int endX = MathUtils.floor((maxX - 0.001f) / CELL_SIZE);
+        if (endX < startX) {
+            return;
+        }
+        endX = Math.min(GRID_WIDTH - 1, endX);
+        int startY = Math.max(0, MathUtils.floor(rect.y / CELL_SIZE));
+        int endY = MathUtils.floor((maxY - 0.001f) / CELL_SIZE);
+        if (endY < startY) {
+            return;
+        }
+        endY = Math.min(GRID_HEIGHT - 1, endY);
+        for (int gx = startX; gx <= endX; gx++) {
+            for (int gy = startY; gy <= endY; gy++) {
+                grid[gx][gy] = true;
+            }
+        }
+    }
+
+    private void resolveHamsterCollision(Rectangle obstacle, Rectangle intersection) {
+        if (obstacle == null) {
+            return;
+        }
+        resolveCollision(hamster, obstacle, intersection);
+    }
+
+    private void handleGradeCollision(Rectangle obstacle, Rectangle intersection) {
+        if (obstacle == null) {
+            return;
+        }
+        int axis = resolveCollision(grade, obstacle, intersection);
+        if (axis == 0) {
+            gradeDirection.x = -gradeDirection.x;
+        } else if (axis == 1) {
+            gradeDirection.y = -gradeDirection.y;
+        }
+    }
+
+    private int resolveCollision(Rectangle mover, Rectangle obstacle, Rectangle intersection) {
+        if (obstacle == null) {
+            return -1;
+        }
+        if (!Intersector.intersectRectangles(mover, obstacle, intersection)) {
+            return -1;
+        }
+        if (intersection.width < intersection.height) {
+            if (mover.x < obstacle.x) {
+                mover.x -= intersection.width;
+            } else {
+                mover.x += intersection.width;
+            }
+            return 0;
+        } else {
+            if (mover.y < obstacle.y) {
+                mover.y -= intersection.height;
+            } else {
+                mover.y += intersection.height;
+            }
+            return 1;
+        }
     }
 
     private boolean isReachable(int startX, int startY, int targetX, int targetY) {
@@ -514,6 +1169,9 @@ public class Main extends ApplicationAdapter {
     @Override
     public void render() {
         if (loading) {
+            updateLoading();
+        }
+        if (loading) {
             Gdx.gl.glClearColor(0, 0, 0, 1);
             Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
@@ -552,15 +1210,17 @@ public class Main extends ApplicationAdapter {
         batch.setProjectionMatrix(camera.combined);
 
         batch.begin();
-        batch.draw(backgroundTexture, 0, 0, 800, 600);
+        batch.draw(backgroundTexture, 0, 0, sceneWidth, sceneHeight);
         batch.end();
 
         batch.begin();
         batch.draw(hamsterTexture, hamster.x, hamster.y, hamster.width, hamster.height);
         batch.draw(gradeTexture, grade.x, grade.y);
         for (Block block : blocks) {
-            Rectangle body = block.body;
-            batch.draw(blockTexture, body.x, body.y, body.width, body.height);
+            if (block.texture != null && block.drawBounds != null) {
+                Rectangle drawBounds = block.drawBounds;
+                batch.draw(block.texture, drawBounds.x, drawBounds.y, drawBounds.width, drawBounds.height);
+            }
         }
         font.draw(batch, "Hamster: " + hamsterScore, 10, 590);
         font.draw(batch, "Grade: " + gradeScore, 10, 560);
@@ -598,57 +1258,40 @@ public class Main extends ApplicationAdapter {
             if (Gdx.input.isKeyPressed(Input.Keys.DOWN)) hamster.y -= 200 * Gdx.graphics.getDeltaTime();
         }
 
-        hamster.x = MathUtils.clamp(hamster.x, 0, 800 - hamster.width);
-        hamster.y = MathUtils.clamp(hamster.y, 0, 600 - hamster.height);
+        hamster.x = MathUtils.clamp(hamster.x, 0, sceneWidth - hamster.width);
+        hamster.y = MathUtils.clamp(hamster.y, 0, sceneHeight - hamster.height);
 
         grade.x += gradeDirection.x * 100 * Gdx.graphics.getDeltaTime();
         grade.y += gradeDirection.y * 100 * Gdx.graphics.getDeltaTime();
 
-        if (grade.x < 0 || grade.x > 800 - 64) gradeDirection.x = -gradeDirection.x;
-        if (grade.y < 0 || grade.y > 600 - 64) gradeDirection.y = -gradeDirection.y;
+        if (grade.x < 0 || grade.x > sceneWidth - grade.width) gradeDirection.x = -gradeDirection.x;
+        if (grade.y < 0 || grade.y > sceneHeight - grade.height) gradeDirection.y = -gradeDirection.y;
 
-        for (Block block : blocks) {
-            Rectangle body = block.body;
-            Rectangle intersection = new Rectangle();
-            if (Intersector.intersectRectangles(hamster, body, intersection)) {
-                if (intersection.width < intersection.height) {
-                    if (hamster.x < body.x) {
-                        hamster.x -= intersection.width;
-                    } else {
-                        hamster.x += intersection.width;
-                    }
-                } else {
-                    if (hamster.y < body.y) {
-                        hamster.y -= intersection.height;
-                    } else {
-                        hamster.y += intersection.height;
-                    }
+        Rectangle intersection = new Rectangle();
+        if (blocks != null) {
+            for (Block block : blocks) {
+                resolveHamsterCollision(block.body, intersection);
+                for (Rectangle ascender : block.ascenders) {
+                    resolveHamsterCollision(ascender, intersection);
                 }
-            }
+                for (Rectangle descender : block.descenders) {
+                    resolveHamsterCollision(descender, intersection);
+                }
 
-            if (Intersector.intersectRectangles(grade, body, intersection)) {
-                if (intersection.width < intersection.height) {
-                    if (grade.x < body.x) {
-                        grade.x -= intersection.width;
-                    } else {
-                        grade.x += intersection.width;
-                    }
-                    gradeDirection.x = -gradeDirection.x;
-                } else {
-                    if (grade.y < body.y) {
-                        grade.y -= intersection.height;
-                    } else {
-                        grade.y += intersection.height;
-                    }
-                    gradeDirection.y = -gradeDirection.y;
+                handleGradeCollision(block.body, intersection);
+                for (Rectangle ascender : block.ascenders) {
+                    handleGradeCollision(ascender, intersection);
+                }
+                for (Rectangle descender : block.descenders) {
+                    handleGradeCollision(descender, intersection);
                 }
             }
         }
 
-        hamster.x = MathUtils.clamp(hamster.x, 0, 800 - hamster.width);
-        hamster.y = MathUtils.clamp(hamster.y, 0, 600 - hamster.height);
-        grade.x = MathUtils.clamp(grade.x, 0, 800 - grade.width);
-        grade.y = MathUtils.clamp(grade.y, 0, 600 - grade.height);
+        hamster.x = MathUtils.clamp(hamster.x, 0, sceneWidth - hamster.width);
+        hamster.y = MathUtils.clamp(hamster.y, 0, sceneHeight - hamster.height);
+        grade.x = MathUtils.clamp(grade.x, 0, sceneWidth - grade.width);
+        grade.y = MathUtils.clamp(grade.y, 0, sceneHeight - grade.height);
 
         if (hamster.overlaps(grade)) {
             if (hamster.y >= grade.y + grade.height - 5) {
@@ -675,7 +1318,6 @@ public class Main extends ApplicationAdapter {
         if (batch != null) batch.dispose();
         if (hamsterTexture != null) hamsterTexture.dispose();
         if (gradeTexture != null) gradeTexture.dispose();
-        if (blockTexture != null) blockTexture.dispose();
         if (backgroundTexture != null) backgroundTexture.dispose();
         if (backgroundPixmap != null) backgroundPixmap.dispose();
         if (font != null) font.dispose();
@@ -684,6 +1326,14 @@ public class Main extends ApplicationAdapter {
         if (backgroundMusic != null) {
             backgroundMusic.stop();
             backgroundMusic.dispose();
+        }
+        if (loaderExecutor != null) {
+            loaderExecutor.dispose();
+        }
+        for (BlockTemplate template : blockTemplateCache.values()) {
+            if (template.texture != null) {
+                template.texture.dispose();
+            }
         }
     }
 }
