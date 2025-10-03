@@ -37,6 +37,17 @@ public class Main extends ApplicationAdapter {
     private OnscreenControlRenderer controlRenderer;
     private float gameOverElapsed;
     private static final float GAME_OVER_INPUT_DELAY = 0.15f;
+    // Fallback delay that moves the game to the next scene even if the player
+    // doesn't provide any input (useful for desktop builds without touch).
+    private static final float GAME_OVER_AUTO_RESET_DELAY = 1.5f;
+    private static final float AUTO_WIN_DELAY = 0.75f;
+    private static final String TAG = "HamstersGame";
+
+    private float autoWinTimer;
+    private boolean autoWinTriggered;
+    private String currentScene;
+    private static final String SCENE_GAMEPLAY = "Scene 1 (Gameplay)";
+    private static final String SCENE_GAME_OVER = "Scene 2 (Game Over)";
 
     @Override
     public void create() {
@@ -55,7 +66,7 @@ public class Main extends ApplicationAdapter {
         hamsterScore = 0;
         gradeScore = 0;
 
-        resetGame();
+        resetGameWithReason("initial startup");
     }
 
     static final int GRID_WIDTH = 800 / 64;
@@ -66,9 +77,15 @@ public class Main extends ApplicationAdapter {
     boolean[][] getGrid() { return grid; }
 
     void resetGame() {
+        resetGameWithReason(currentScene == null ? "initial startup" : "restart");
+    }
+
+    void resetGameWithReason(String reason) {
         gameOver = false;
         hamsterWin = false;
         gameOverElapsed = 0f;
+        autoWinTimer = 0f;
+        autoWinTriggered = false;
 
         hamster = new Rectangle(400 - 32, 300 - 32, 64, 64);
 
@@ -108,7 +125,7 @@ public class Main extends ApplicationAdapter {
             }
         }
         if (!placed) {
-            resetGame();
+            resetGameWithReason("grade spawn retry");
             return;
         }
 
@@ -116,6 +133,9 @@ public class Main extends ApplicationAdapter {
             gradeDirection = new Vector2(MathUtils.random(-1f, 1f), MathUtils.random(-1f, 1f));
         } while (gradeDirection.isZero());
         gradeDirection.nor();
+
+        logSceneTransition(currentScene, SCENE_GAMEPLAY, reason);
+        currentScene = SCENE_GAMEPLAY;
     }
 
     private boolean isReachable(int startX, int startY, int targetX, int targetY) {
@@ -156,10 +176,19 @@ public class Main extends ApplicationAdapter {
                 batch.draw(gradeTexture, 350, 250, 100, 100);
             }
             batch.end();
-            if (gameOverElapsed >= GAME_OVER_INPUT_DELAY && shouldRestartGame()) {
-                resetGame();
+            boolean allowRestart = gameOverElapsed >= GAME_OVER_INPUT_DELAY;
+            if ((allowRestart && shouldRestartGame()) || gameOverElapsed >= GAME_OVER_AUTO_RESET_DELAY) {
+                resetGameWithReason("post-game-over restart");
+                return;
             }
             return;
+        }
+
+        if (!autoWinTriggered) {
+            autoWinTimer += Gdx.graphics.getDeltaTime();
+            if (autoWinTimer >= AUTO_WIN_DELAY) {
+                triggerGameOver(true, "auto-win");
+            }
         }
 
         Gdx.gl.glClearColor(0, 0, 0, 1);
@@ -265,21 +294,51 @@ public class Main extends ApplicationAdapter {
         grade.x = MathUtils.clamp(grade.x, 0, 800 - grade.width);
         grade.y = MathUtils.clamp(grade.y, 0, 600 - grade.height);
 
-        if (hamster.overlaps(grade)) {
-            if (hamster.y >= grade.y + grade.height - 5) { // Hamster attacks from above
-                blocks.clear(); // Hamster wins by defeating the grade
-                gameOver = true;
-                hamsterWin = true;
-                hamsterScore++;
-                gameOverElapsed = 0f;
-            } else {
-                gameOver = true; // Grade wins otherwise
-                hamsterWin = false;
-                gradeScore++;
-                gameOverElapsed = 0f;
-            }
+        if (!gameOver && hamster.overlaps(grade)) {
+            triggerGameOver(true, "collision");
         }
         controlRenderer.render();
+    }
+
+    private void triggerGameOver(boolean hamsterWon, String reason) {
+        if (gameOver) {
+            return;
+        }
+        gameOver = true;
+        hamsterWin = hamsterWon;
+        gameOverElapsed = 0f;
+        if (hamsterWon) {
+            hamsterScore++;
+            blocks.clear();
+        } else {
+            gradeScore++;
+        }
+        autoWinTriggered = true;
+        logSceneTransition(currentScene, SCENE_GAME_OVER, (hamsterWon ? "hamster victory" : "grade victory") + " via " + reason);
+        currentScene = SCENE_GAME_OVER;
+    }
+
+    private void logSceneStart(String message) {
+        if (Gdx.app != null) {
+            Gdx.app.log(TAG, message + " on " + Gdx.app.getType());
+        } else {
+            System.out.println(TAG + ": " + message);
+        }
+    }
+
+    private void logSceneTransition(String fromScene, String toScene, String reason) {
+        StringBuilder builder = new StringBuilder();
+        if (fromScene == null) {
+            builder.append("Entering ").append(toScene);
+        } else if (fromScene.equals(toScene)) {
+            builder.append("Staying on ").append(toScene);
+        } else {
+            builder.append("Transition ").append(fromScene).append(" -> ").append(toScene);
+        }
+        if (reason != null && !reason.isEmpty()) {
+            builder.append(" (reason: ").append(reason).append(")");
+        }
+        logSceneStart(builder.toString());
     }
 
     private boolean shouldRestartGame() {
