@@ -6,6 +6,8 @@ blocks/block2.json
 blocks/block2.svg
 blocks/hamster.json
 blocks/hamster.svg
+blocks/hamster4.json
+blocks/hamster4.svg
 com/badlogic/gdx/utils/lsans-15.fnt
 com/badlogic/gdx/utils/lsans-15.png
 controls.png

@@ -3,14 +3,15 @@
   "canvasWidth": 800,
   "canvasHeight": 600,
   "blocks": [
-    {"block": "hamster.json", "x": -176.000, "y": -116.500},
-    {"block": "hamster.json", "x": -171.000, "y": -0.500},
-    {"block": "hamster.json", "x": 1.000, "y": -115.500},
-    {"block": "hamster.json", "x": 0.000, "y": 0.500},
-    {"block": "hamster.json", "x": -180.000, "y": 116.500},
     {"block": "block2.json", "x": 24.000, "y": 116.500},
-    {"block": "block2.json", "x": 78.000, "y": 116.500},
+    {"block": "block2.json", "x": -32.000, "y": 116.500},
     {"block": "block2.json", "x": 133.000, "y": 116.500},
-    {"block": "block2.json", "x": -32.000, "y": 116.500}
+    {"block": "block2.json", "x": 78.000, "y": 116.500},
+    {"block": "hamster4.json", "x": -35.000, "y": 0.500},
+    {"block": "hamster4.json", "x": 128.000, "y": 0.500},
+    {"block": "hamster4.json", "x": 127.000, "y": -115.500},
+    {"block": "hamster4.json", "x": -34.000, "y": -115.500},
+    {"block": "hamster4.json", "x": -157.000, "y": -115.500},
+    {"block": "hamster4.json", "x": -159.000, "y": 0.500}
   ]
 }
