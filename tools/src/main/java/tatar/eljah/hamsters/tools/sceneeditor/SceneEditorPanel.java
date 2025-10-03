@@ -119,6 +119,14 @@ final class SceneEditorPanel extends JPanel {
         return selectedInstance;
     }
 
+    boolean moveSelectedInstanceUp() {
+        return moveSelectedInstance(-1);
+    }
+
+    boolean moveSelectedInstanceDown() {
+        return moveSelectedInstance(1);
+    }
+
     void remapDefinitions(Map<String, BlockDefinition> definitions) {
         boolean changed = false;
         for (BlockInstance instance : instances) {
@@ -180,6 +188,36 @@ final class SceneEditorPanel extends JPanel {
             }
         }
         return bestY;
+    }
+
+    private boolean moveSelectedInstance(int deltaStripe) {
+        if (selectedInstance == null) {
+            return false;
+        }
+        BlockDefinition definition = selectedInstance.getDefinition();
+        if (definition == null) {
+            return false;
+        }
+        if (currentStripePlacements.isEmpty()) {
+            updateStripeContext(selectedInstance);
+        }
+        if (currentStripePlacements.isEmpty()) {
+            return false;
+        }
+        int currentIndex = activeStripeIndex;
+        if (currentIndex < 0) {
+            currentIndex = findStripeIndex(currentStripePlacements, selectedInstance.getY());
+        }
+        int targetIndex = currentIndex + deltaStripe;
+        if (targetIndex < 0 || targetIndex >= currentStripePlacements.size()) {
+            return false;
+        }
+        StripePlacement placement = currentStripePlacements.get(targetIndex);
+        selectedInstance.setY(placement.snapY);
+        activeStripeIndex = targetIndex;
+        repaint();
+        notifySelectionChanged();
+        return true;
     }
 
     @Override

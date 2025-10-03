@@ -106,6 +106,38 @@ class SceneEditorFrame extends JFrame {
         });
         leftButtons.add(removeButton);
 
+        JButton moveUpButton = new JButton("Move Up");
+        moveUpButton.addActionListener(e -> {
+            if (editorPanel.moveSelectedInstanceUp()) {
+                BlockInstance selected = editorPanel.getSelectedInstance();
+                if (selected != null && selected.getDefinition() != null) {
+                    statusLabel.setText(String.format(Locale.US, "Moved %s to (%.1f, %.1f)",
+                            selected.getDefinition().getDisplayName(), selected.getX(), selected.getY()));
+                } else {
+                    statusLabel.setText("Moved block up");
+                }
+            } else {
+                statusLabel.setText("Cannot move block up");
+            }
+        });
+        leftButtons.add(moveUpButton);
+
+        JButton moveDownButton = new JButton("Move Down");
+        moveDownButton.addActionListener(e -> {
+            if (editorPanel.moveSelectedInstanceDown()) {
+                BlockInstance selected = editorPanel.getSelectedInstance();
+                if (selected != null && selected.getDefinition() != null) {
+                    statusLabel.setText(String.format(Locale.US, "Moved %s to (%.1f, %.1f)",
+                            selected.getDefinition().getDisplayName(), selected.getX(), selected.getY()));
+                } else {
+                    statusLabel.setText("Moved block down");
+                }
+            } else {
+                statusLabel.setText("Cannot move block down");
+            }
+        });
+        leftButtons.add(moveDownButton);
+
         JButton clearButton = new JButton("Clear Scene");
         clearButton.addActionListener(e -> {
             editorPanel.clearScene();
