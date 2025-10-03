@@ -1,0 +1,16 @@
+{
+  "svg": "block2.svg",
+  "scale": 1.00000,
+  "svgY": 229.62701,
+  "canvasWidth": 800,
+  "canvasHeight": 600,
+  "svgBounds": {
+    "x": 9.04758,
+    "y": 21.20555,
+    "width": 41.10951,
+    "height": 42.74597
+  },
+  "body": {"x": 380.00000, "y": 228.00000, "width": 39.00000, "height": 45.00000},
+  "ascenders": [],
+  "descenders": []
+}

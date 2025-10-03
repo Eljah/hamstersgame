@@ -2,6 +2,8 @@ aldermeshka.mp3
 block.png
 block.svg
 block2.svg
+blocks/block2.json
+blocks/block2.svg
 blocks/hamster.json
 blocks/hamster.svg
 com/badlogic/gdx/utils/lsans-15.fnt
