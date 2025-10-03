@@ -31,6 +31,9 @@ final class SceneEditorPanel extends JPanel {
     private static final Color DESC_FILL = new Color(0, 0, 204, 60);
     private static final Color DESC_BORDER = new Color(0, 0, 204);
 
+    private static final double SNAP_DISTANCE = 12.0;
+    private static final double STRIPE_SWITCH_MARGIN = 16.0;
+
     private final BufferedImage backgroundImage;
     private final List<LinerGuides.BodyStripe> bodyStripes;
     private final List<BlockInstance> instances = new ArrayList<>();
@@ -40,6 +43,8 @@ final class SceneEditorPanel extends JPanel {
     private double initialX;
     private double initialY;
     private Consumer<BlockInstance> selectionListener;
+    private List<StripePlacement> currentStripePlacements = Collections.emptyList();
+    private int activeStripeIndex = -1;
 
     SceneEditorPanel(LinerGuides guides) {
         this.backgroundImage = guides.getBackgroundImage();
@@ -77,6 +82,7 @@ final class SceneEditorPanel extends JPanel {
         instances.add(instance);
         if (select) {
             selectedInstance = instance;
+            updateStripeContext(selectedInstance);
             notifySelectionChanged();
         }
         repaint();
@@ -90,6 +96,7 @@ final class SceneEditorPanel extends JPanel {
         boolean removed = instances.remove(selectedInstance);
         if (removed) {
             selectedInstance = null;
+            updateStripeContext(null);
             repaint();
             notifySelectionChanged();
         }
@@ -99,6 +106,7 @@ final class SceneEditorPanel extends JPanel {
     void clearScene() {
         instances.clear();
         selectedInstance = null;
+        updateStripeContext(null);
         repaint();
         notifySelectionChanged();
     }
@@ -122,6 +130,9 @@ final class SceneEditorPanel extends JPanel {
             }
         }
         if (changed) {
+            if (selectedInstance != null) {
+                updateStripeContext(selectedInstance);
+            }
             repaint();
         }
     }
@@ -281,6 +292,76 @@ final class SceneEditorPanel extends JPanel {
         }
     }
 
+    private void updateStripeContext(BlockInstance instance) {
+        if (instance == null) {
+            currentStripePlacements = Collections.emptyList();
+            activeStripeIndex = -1;
+            return;
+        }
+        currentStripePlacements = computeStripePlacements(instance.getDefinition());
+        if (currentStripePlacements.isEmpty()) {
+            activeStripeIndex = -1;
+        } else {
+            activeStripeIndex = findStripeIndex(currentStripePlacements, instance.getY());
+        }
+    }
+
+    private List<StripePlacement> computeStripePlacements(BlockDefinition definition) {
+        if (definition == null) {
+            return Collections.emptyList();
+        }
+        Rectangle2D.Double body = definition.getBodyRect();
+        if (body == null || bodyStripes.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<StripePlacement> placements = new ArrayList<>();
+        for (LinerGuides.BodyStripe stripe : bodyStripes) {
+            double minY = stripe.getTop() - body.y;
+            double maxY = stripe.getBottom() - (body.y + body.height);
+            if (maxY + 1e-6 < minY) {
+                continue;
+            }
+            double clampedMin = Math.min(minY, maxY);
+            double clampedMax = Math.max(minY, maxY);
+            placements.add(new StripePlacement(clampedMin, clampedMax));
+        }
+        return placements;
+    }
+
+    private int findStripeIndex(List<StripePlacement> placements, double y) {
+        if (placements.isEmpty()) {
+            return -1;
+        }
+        double epsilon = 1e-6;
+        int bestIndex = 0;
+        double closestDistance = Double.POSITIVE_INFINITY;
+        for (int i = 0; i < placements.size(); i++) {
+            StripePlacement placement = placements.get(i);
+            if (y >= placement.minY - epsilon && y <= placement.maxY + epsilon) {
+                return i;
+            }
+            double clamped = Math.max(placement.minY, Math.min(y, placement.maxY));
+            double distance = Math.abs(y - clamped);
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                bestIndex = i;
+            }
+        }
+        return bestIndex;
+    }
+
+    private static final class StripePlacement {
+        final double minY;
+        final double maxY;
+        final double snapY;
+
+        StripePlacement(double minY, double maxY) {
+            this.minY = minY;
+            this.maxY = maxY;
+            this.snapY = (minY + maxY) / 2.0;
+        }
+    }
+
     private final class MouseHandler extends MouseAdapter {
         @Override
         public void mousePressed(MouseEvent e) {
@@ -292,6 +373,7 @@ final class SceneEditorPanel extends JPanel {
             BlockInstance found = findInstanceAt(point);
             if (found != null) {
                 selectedInstance = found;
+                updateStripeContext(found);
                 dragStart = point;
                 initialX = found.getX();
                 initialY = found.getY();
@@ -301,6 +383,7 @@ final class SceneEditorPanel extends JPanel {
                 notifySelectionChanged();
             } else if (selectedInstance != null) {
                 selectedInstance = null;
+                updateStripeContext(null);
                 repaint();
                 notifySelectionChanged();
             }
@@ -313,8 +396,29 @@ final class SceneEditorPanel extends JPanel {
             }
             double dx = e.getX() - dragStart.x;
             double dy = e.getY() - dragStart.y;
+            double desiredY = initialY + dy;
             double newX = initialX + dx;
-            double newY = clampY(selectedInstance.getDefinition(), initialY + dy);
+            double newY;
+            if (!currentStripePlacements.isEmpty() && activeStripeIndex >= 0) {
+                int newIndex = activeStripeIndex;
+                while (newIndex > 0 && desiredY <= currentStripePlacements.get(newIndex).minY - STRIPE_SWITCH_MARGIN) {
+                    newIndex--;
+                }
+                while (newIndex < currentStripePlacements.size() - 1
+                        && desiredY >= currentStripePlacements.get(newIndex).maxY + STRIPE_SWITCH_MARGIN) {
+                    newIndex++;
+                }
+                activeStripeIndex = newIndex;
+                StripePlacement placement = currentStripePlacements.get(activeStripeIndex);
+                double clamped = Math.max(placement.minY, Math.min(desiredY, placement.maxY));
+                if (Math.abs(desiredY - placement.snapY) <= SNAP_DISTANCE) {
+                    newY = placement.snapY;
+                } else {
+                    newY = clamped;
+                }
+            } else {
+                newY = clampY(selectedInstance.getDefinition(), desiredY);
+            }
             selectedInstance.setPosition(newX, newY);
             repaint();
         }
