@@ -33,6 +33,7 @@ final class SceneEditorPanel extends JPanel {
 
     private static final double SNAP_DISTANCE = 12.0;
     private static final double STRIPE_SWITCH_MARGIN = 16.0;
+    private static final double POSITION_EPSILON = 1e-6;
 
     private final BufferedImage backgroundImage;
     private final List<LinerGuides.BodyStripe> bodyStripes;
@@ -157,37 +158,40 @@ final class SceneEditorPanel extends JPanel {
         if (definition == null) {
             return desiredY;
         }
-        Rectangle2D.Double body = definition.getBodyRect();
-        if (body == null || bodyStripes.isEmpty()) {
+        List<StripePlacement> placements = computeStripePlacements(definition);
+        if (placements.isEmpty()) {
             return desiredY;
         }
-        double epsilon = 1e-6;
-        for (LinerGuides.BodyStripe stripe : bodyStripes) {
-            double minY = stripe.getTop() - body.y;
-            double maxY = stripe.getBottom() - (body.y + body.height);
-            if (minY > maxY) {
-                continue;
+
+        double bestRangeY = desiredY;
+        double bestRangeDistance = Double.POSITIVE_INFINITY;
+        Double fallbackSnapY = null;
+        double fallbackDistance = Double.POSITIVE_INFINITY;
+
+        for (StripePlacement placement : placements) {
+            double clamped = placement.clamp(desiredY);
+            if (desiredY >= placement.minY - POSITION_EPSILON && desiredY <= placement.maxY + POSITION_EPSILON) {
+                return clamped;
             }
-            if (desiredY >= minY - epsilon && desiredY <= maxY + epsilon) {
-                return Math.max(minY, Math.min(desiredY, maxY));
-            }
-        }
-        double bestY = desiredY;
-        double closestDistance = Double.POSITIVE_INFINITY;
-        for (LinerGuides.BodyStripe stripe : bodyStripes) {
-            double minY = stripe.getTop() - body.y;
-            double maxY = stripe.getBottom() - (body.y + body.height);
-            if (minY > maxY) {
-                continue;
-            }
-            double clamped = Math.max(minY, Math.min(desiredY, maxY));
+
             double distance = Math.abs(desiredY - clamped);
-            if (distance < closestDistance) {
-                closestDistance = distance;
-                bestY = clamped;
+            if (placement.hasRange()) {
+                if (distance < bestRangeDistance) {
+                    bestRangeDistance = distance;
+                    bestRangeY = clamped;
+                }
+            } else {
+                if (distance < fallbackDistance) {
+                    fallbackDistance = distance;
+                    fallbackSnapY = placement.snapY;
+                }
             }
         }
-        return bestY;
+
+        if (bestRangeDistance < Double.POSITIVE_INFINITY) {
+            return bestRangeY;
+        }
+        return fallbackSnapY != null ? fallbackSnapY : desiredY;
     }
 
     private boolean moveSelectedInstance(int deltaStripe) {
@@ -352,16 +356,9 @@ final class SceneEditorPanel extends JPanel {
         if (body == null || bodyStripes.isEmpty()) {
             return Collections.emptyList();
         }
-        List<StripePlacement> placements = new ArrayList<>();
+        List<StripePlacement> placements = new ArrayList<>(bodyStripes.size());
         for (LinerGuides.BodyStripe stripe : bodyStripes) {
-            double minY = stripe.getTop() - body.y;
-            double maxY = stripe.getBottom() - (body.y + body.height);
-            if (maxY + 1e-6 < minY) {
-                continue;
-            }
-            double clampedMin = Math.min(minY, maxY);
-            double clampedMax = Math.max(minY, maxY);
-            placements.add(new StripePlacement(clampedMin, clampedMax));
+            placements.add(createStripePlacement(body, stripe));
         }
         return placements;
     }
@@ -370,12 +367,11 @@ final class SceneEditorPanel extends JPanel {
         if (placements.isEmpty()) {
             return -1;
         }
-        double epsilon = 1e-6;
         int bestIndex = 0;
         double closestDistance = Double.POSITIVE_INFINITY;
         for (int i = 0; i < placements.size(); i++) {
             StripePlacement placement = placements.get(i);
-            if (y >= placement.minY - epsilon && y <= placement.maxY + epsilon) {
+            if (y >= placement.minY - POSITION_EPSILON && y <= placement.maxY + POSITION_EPSILON) {
                 return i;
             }
             double clamped = Math.max(placement.minY, Math.min(y, placement.maxY));
@@ -388,6 +384,16 @@ final class SceneEditorPanel extends JPanel {
         return bestIndex;
     }
 
+    private StripePlacement createStripePlacement(Rectangle2D.Double body, LinerGuides.BodyStripe stripe) {
+        double alignTop = stripe.getTop() - body.y;
+        double alignBottom = stripe.getBottom() - (body.y + body.height);
+        if (alignTop <= alignBottom) {
+            return new StripePlacement(alignTop, alignBottom);
+        }
+        double snap = (alignTop + alignBottom) / 2.0;
+        return new StripePlacement(snap, snap);
+    }
+
     private static final class StripePlacement {
         final double minY;
         final double maxY;
@@ -397,6 +403,20 @@ final class SceneEditorPanel extends JPanel {
             this.minY = minY;
             this.maxY = maxY;
             this.snapY = (minY + maxY) / 2.0;
+        }
+
+        boolean hasRange() {
+            return maxY - minY > POSITION_EPSILON;
+        }
+
+        double clamp(double value) {
+            if (value <= minY) {
+                return minY;
+            }
+            if (value >= maxY) {
+                return maxY;
+            }
+            return value;
         }
     }
 
