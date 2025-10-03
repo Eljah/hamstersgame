@@ -522,9 +522,12 @@ public class Svg2Pixmap {
         ellipse(element, pixmap, 1f, 1f, 0f, 0f);
     }
 
+    private static boolean warnedGwt;
+
     protected static void checkGWT() {
-        if (Gdx.app.getType().equals(Application.ApplicationType.WebGL)) {
-            Gdx.app.error("Svg2Pixmap", "Due to performance issue, in GWT mode please use functions with suffix -JSNI instead.");
+        if (!warnedGwt && Gdx.app != null && Gdx.app.getType() == Application.ApplicationType.WebGL) {
+            Gdx.app.log("Svg2Pixmap", "Falling back to CPU SVG rasterization; consider using the JSNI helpers for async conversion in GWT.");
+            warnedGwt = true;
         }
     }
 

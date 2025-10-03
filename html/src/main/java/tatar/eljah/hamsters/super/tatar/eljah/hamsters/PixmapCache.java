@@ -1,6 +1,5 @@
 package tatar.eljah.hamsters;
 
-import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.files.FileHandle;
 import com.badlogic.gdx.graphics.Pixmap;
 
@@ -24,6 +23,6 @@ public final class PixmapCache {
     }
 
     static FileHandle resolveCacheDir() {
-        return Gdx.files.local("hamstersgame-cache");
+        throw new UnsupportedOperationException("Pixmap caching is not supported on GWT");
     }
 }
