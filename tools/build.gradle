@@ -2,8 +2,10 @@ apply plugin: 'application'
 
 sourceSets.main.resources.srcDirs += [ rootProject.file('assets').path ]
 
-mainClassName = 'tatar.eljah.hamsters.tools.blockeditor.BlockEditorLauncher'
-application.setMainClass(mainClassName)
+def defaultMainClass = 'tatar.eljah.hamsters.tools.blockeditor.BlockEditorLauncher'
+def chosenMainClass = project.hasProperty('mainClass') ? project.property('mainClass').toString() : defaultMainClass
+mainClassName = chosenMainClass
+application.setMainClass(chosenMainClass)
 
 eclipse.project.name = appName + '-tools'
 

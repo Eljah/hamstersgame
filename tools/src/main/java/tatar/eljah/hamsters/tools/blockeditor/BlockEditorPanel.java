@@ -1,5 +1,8 @@
 package tatar.eljah.hamsters.tools.blockeditor;
 
+import tatar.eljah.hamsters.tools.svg.SvgHandle;
+import tatar.eljah.hamsters.tools.svg.SvgLoader;
+
 import javax.imageio.ImageIO;
 import javax.swing.AbstractAction;
 import javax.swing.JPanel;
