@@ -29,8 +29,11 @@ import com.badlogic.gdx.files.FileHandle;
 import io.github.fxzjshm.gdx.svg2pixmap.Svg2Pixmap;
 import tatar.eljah.hamsters.PixmapCache;
 
-import java.security.MessageDigest;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.Comparator;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class Main extends ApplicationAdapter {
     private SpriteBatch batch;
@@ -74,25 +77,20 @@ public class Main extends ApplicationAdapter {
     private JsonValue sceneJson;
     private int sceneWidth = 800;
     private int sceneHeight = 600;
+    private Array<String> levelFiles = new Array<>();
+    private int currentLevelIndex;
+    private boolean advanceToNextLevel;
+    private boolean showVictoryScreen;
+
+    private static final Pattern SCENE_FILE_PATTERN = Pattern.compile("scene(\\d+)\\.json");
     @Override
     public void create() {
         if (Gdx.app.getType() == Application.ApplicationType.WebGL) {
             Svg2Pixmap.generateScale = 1;
         }
 
-        sceneJson = null;
-        try {
-            sceneJson = new JsonReader().parse(Gdx.files.internal("scenes/scene.json"));
-        } catch (Exception e) {
-            Gdx.app.error("Main", "Failed to load scene configuration from scenes/scene.json", e);
-        }
-        if (sceneJson == null) {
-            Gdx.app.log("Main", "Scene configuration unavailable; falling back to default layout");
-        }
-        if (sceneJson != null) {
-            sceneWidth = sceneJson.getInt("canvasWidth", sceneWidth);
-            sceneHeight = sceneJson.getInt("canvasHeight", sceneHeight);
-        }
+        discoverLevels();
+        currentLevelIndex = 0;
 
         batch = new SpriteBatch();
         font = new BitmapFont();
@@ -116,8 +114,102 @@ public class Main extends ApplicationAdapter {
         }
 
         loaderExecutor = new AsyncExecutor(1);
+        startLevel(currentLevelIndex);
+    }
+
+    private void discoverLevels() {
+        levelFiles.clear();
+        FileHandle scenesDir = Gdx.files.internal("scenes");
+        if (scenesDir.exists() && scenesDir.isDirectory()) {
+            for (FileHandle file : scenesDir.list()) {
+                Matcher matcher = SCENE_FILE_PATTERN.matcher(file.name());
+                if (matcher.matches()) {
+                    levelFiles.add(file.name());
+                }
+            }
+        }
+        levelFiles.sort(new Comparator<String>() {
+            @Override
+            public int compare(String o1, String o2) {
+                return Integer.compare(extractLevelNumber(o1), extractLevelNumber(o2));
+            }
+        });
+        if (levelFiles.size == 0) {
+            levelFiles.add("scene1.json");
+        }
+    }
+
+    private int extractLevelNumber(String fileName) {
+        Matcher matcher = SCENE_FILE_PATTERN.matcher(fileName);
+        if (matcher.matches()) {
+            try {
+                return Integer.parseInt(matcher.group(1));
+            } catch (NumberFormatException ignored) {
+                // fall through to default
+            }
+        }
+        return Integer.MAX_VALUE;
+    }
+
+    private void startLevel(int levelIndex) {
+        if (levelFiles.size == 0) {
+            Gdx.app.log("Main", "No level files found; cannot start level");
+            return;
+        }
+        int targetIndex = MathUtils.clamp(levelIndex, 0, levelFiles.size - 1);
+        currentLevelIndex = targetIndex;
+        advanceToNextLevel = false;
+        showVictoryScreen = false;
+        gameOver = false;
+        hamsterWin = false;
+        loading = true;
+        loadingProgress = 0f;
+
+        disposeLevelAssets();
+
+        loadSceneForCurrentLevel();
+
+        if (camera != null) {
+            camera.setToOrtho(false, sceneWidth, sceneHeight);
+        }
+
         prepareLoadingSteps();
         startNextLoadingStep();
+    }
+
+    private void loadSceneForCurrentLevel() {
+        sceneJson = null;
+        String levelFile = levelFiles.get(currentLevelIndex);
+        try {
+            sceneJson = new JsonReader().parse(Gdx.files.internal("scenes/" + levelFile));
+        } catch (Exception e) {
+            Gdx.app.error("Main", "Failed to load scene configuration from scenes/" + levelFile, e);
+        }
+        if (sceneJson == null) {
+            sceneWidth = 800;
+            sceneHeight = 600;
+            Gdx.app.log("Main", "Scene configuration '" + levelFile + "' unavailable; falling back to default layout");
+        } else {
+            sceneWidth = sceneJson.getInt("canvasWidth", 800);
+            sceneHeight = sceneJson.getInt("canvasHeight", 600);
+        }
+    }
+
+    private void disposeLevelAssets() {
+        if (backgroundTexture != null) {
+            backgroundTexture.dispose();
+            backgroundTexture = null;
+        }
+        if (backgroundPixmap != null) {
+            backgroundPixmap.dispose();
+            backgroundPixmap = null;
+        }
+    }
+
+    private void restartCampaign() {
+        hamsterScore = 0;
+        gradeScore = 0;
+        startLevel(0);
     }
 
     private void calculateCorridors() {
@@ -325,10 +417,12 @@ public class Main extends ApplicationAdapter {
     private void finishLoading() {
         calculateCorridors();
         sceneBlocks = loadSceneBlocks(sceneJson);
-        controlRenderer = new OnscreenControlRenderer();
+        if (controlRenderer == null) {
+            controlRenderer = new OnscreenControlRenderer();
+        }
         resetGame();
         loading = false;
-        Gdx.app.log("Main", "Assets loaded");
+        Gdx.app.log("Main", "Assets loaded for level " + (currentLevelIndex + 1));
     }
 
     private BlockTemplate loadBlockTemplate(String blockFile) {
@@ -877,6 +971,8 @@ public class Main extends ApplicationAdapter {
     void resetGame() {
         gameOver = false;
         hamsterWin = false;
+        advanceToNextLevel = false;
+        showVictoryScreen = false;
 
         hamster = new Rectangle(sceneWidth / 2f - 32f, sceneHeight / 2f - 32f, 64, 64);
 
@@ -1194,14 +1290,28 @@ public class Main extends ApplicationAdapter {
             batch.begin();
             font.draw(batch, "Hamster: " + hamsterScore, 10, 590);
             font.draw(batch, "Grade: " + gradeScore, 10, 560);
-            if (hamsterWin) {
+            if (showVictoryScreen) {
+                font.draw(batch, "All levels complete!", 300, 340);
+                font.draw(batch, "Tap to restart", 320, 300);
                 batch.draw(hamsterTexture, 350, 250, 120, 120);
+            } else if (hamsterWin) {
+                batch.draw(hamsterTexture, 350, 250, 120, 120);
+                font.draw(batch, "Level " + (currentLevelIndex + 1) + " complete", 310, 340);
+                font.draw(batch, "Tap to continue", 320, 300);
             } else {
                 batch.draw(gradeTexture, 350, 250, 100, 100);
+                font.draw(batch, "Try again", 350, 340);
+                font.draw(batch, "Tap to restart", 330, 300);
             }
             batch.end();
             if (Gdx.input.isTouched() && Gdx.input.justTouched()) {
-                resetGame();
+                if (showVictoryScreen) {
+                    restartCampaign();
+                } else if (advanceToNextLevel) {
+                    startLevel(currentLevelIndex + 1);
+                } else {
+                    resetGame();
+                }
             }
             return;
         }
@@ -1227,6 +1337,7 @@ public class Main extends ApplicationAdapter {
         }
         font.draw(batch, "Hamster: " + hamsterScore, 10, 590);
         font.draw(batch, "Grade: " + gradeScore, 10, 560);
+        font.draw(batch, "Level: " + (currentLevelIndex + 1) + "/" + Math.max(1, levelFiles.size), 10, 530);
         batch.end();
 
         // Hamster movement
@@ -1302,10 +1413,14 @@ public class Main extends ApplicationAdapter {
                 gameOver = true;
                 hamsterWin = true;
                 hamsterScore++;
+                advanceToNextLevel = currentLevelIndex + 1 < levelFiles.size;
+                showVictoryScreen = !advanceToNextLevel;
             } else {
                 gameOver = true;
                 hamsterWin = false;
                 gradeScore++;
+                advanceToNextLevel = false;
+                showVictoryScreen = false;
             }
         }
 
