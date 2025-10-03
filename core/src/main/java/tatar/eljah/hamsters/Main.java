@@ -84,7 +84,10 @@ public class Main extends ApplicationAdapter {
         try {
             sceneJson = new JsonReader().parse(Gdx.files.internal("scenes/scene.json"));
         } catch (Exception e) {
-            Gdx.app.error("Main", "Failed to load scene configuration", e);
+            Gdx.app.error("Main", "Failed to load scene configuration from scenes/scene.json", e);
+        }
+        if (sceneJson == null) {
+            Gdx.app.log("Main", "Scene configuration unavailable; falling back to default layout");
         }
         if (sceneJson != null) {
             sceneWidth = sceneJson.getInt("canvasWidth", sceneWidth);

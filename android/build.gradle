@@ -99,6 +99,11 @@ tasks.matching { it.name.contains("merge") && it.name.contains("JniLibFolders") 
   packageTask.dependsOn 'copyAndroidNatives'
 }
 
+def assetListTask = project(':core').tasks.named('generateAssetList')
+tasks.matching { it.name.startsWith('merge') && it.name.endsWith('Assets') }.configureEach { mergeTask ->
+  mergeTask.dependsOn(assetListTask)
+}
+
 tasks.register('run', Exec) {
   def path
   def localProperties = project.file("../local.properties")
