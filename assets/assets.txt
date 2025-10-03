@@ -6,8 +6,6 @@ blocks/block2.json
 blocks/block2.svg
 blocks/hamster.json
 blocks/hamster.svg
-blocks/hamster4.json
-blocks/hamster4.svg
 com/badlogic/gdx/utils/lsans-15.fnt
 com/badlogic/gdx/utils/lsans-15.png
 controls.png
@@ -23,7 +21,6 @@ hamster_old.png
 hamster_old.svg
 libgdx.png
 liner.svg
-scenes/scene.json
 scenes/scene1.json
 scenes/scene2.json
 ui/font-list.fnt
