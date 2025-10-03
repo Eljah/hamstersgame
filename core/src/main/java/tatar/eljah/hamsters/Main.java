@@ -35,6 +35,8 @@ public class Main extends ApplicationAdapter {
     private int hamsterScore;
     private int gradeScore;
     private OnscreenControlRenderer controlRenderer;
+    private float gameOverElapsed;
+    private static final float GAME_OVER_INPUT_DELAY = 0.15f;
 
     @Override
     public void create() {
@@ -66,6 +68,7 @@ public class Main extends ApplicationAdapter {
     void resetGame() {
         gameOver = false;
         hamsterWin = false;
+        gameOverElapsed = 0f;
 
         hamster = new Rectangle(400 - 32, 300 - 32, 64, 64);
 
@@ -141,6 +144,7 @@ public class Main extends ApplicationAdapter {
     @Override
     public void render() {
         if (gameOver) {
+            gameOverElapsed += Gdx.graphics.getDeltaTime();
             Gdx.gl.glClearColor(1, 0, 0, 1);
             Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
             batch.begin();
@@ -152,7 +156,7 @@ public class Main extends ApplicationAdapter {
                 batch.draw(gradeTexture, 350, 250, 100, 100);
             }
             batch.end();
-            if (Gdx.input.isTouched() && Gdx.input.justTouched()) {
+            if (gameOverElapsed >= GAME_OVER_INPUT_DELAY && shouldRestartGame()) {
                 resetGame();
             }
             return;
@@ -267,13 +271,28 @@ public class Main extends ApplicationAdapter {
                 gameOver = true;
                 hamsterWin = true;
                 hamsterScore++;
+                gameOverElapsed = 0f;
             } else {
                 gameOver = true; // Grade wins otherwise
                 hamsterWin = false;
                 gradeScore++;
+                gameOverElapsed = 0f;
             }
         }
         controlRenderer.render();
+    }
+
+    private boolean shouldRestartGame() {
+        if (Gdx.input.justTouched()) {
+            return true;
+        }
+        if (Gdx.input.isButtonJustPressed(Input.Buttons.LEFT)) {
+            return true;
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.SPACE) || Gdx.input.isKeyJustPressed(Input.Keys.ENTER)) {
+            return true;
+        }
+        return false;
     }
 
     @Override
