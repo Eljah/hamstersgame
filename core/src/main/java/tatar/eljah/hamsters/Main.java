@@ -121,10 +121,23 @@ public class Main extends ApplicationAdapter {
         levelFiles.clear();
         FileHandle scenesDir = Gdx.files.internal("scenes");
         if (scenesDir.exists() && scenesDir.isDirectory()) {
-            for (FileHandle file : scenesDir.list()) {
-                Matcher matcher = SCENE_FILE_PATTERN.matcher(file.name());
-                if (matcher.matches()) {
-                    levelFiles.add(file.name());
+            FileHandle[] sceneEntries = scenesDir.list();
+            if (sceneEntries == null) {
+                Gdx.app.log("Main", "scenesDir.list() returned null");
+            } else {
+                StringBuilder listing = new StringBuilder();
+                for (int i = 0; i < sceneEntries.length; i++) {
+                    if (i > 0) {
+                        listing.append(", ");
+                    }
+                    listing.append(sceneEntries[i].name());
+                }
+                Gdx.app.log("Main", "scenesDir.list(): [" + listing + "]");
+                for (FileHandle file : sceneEntries) {
+                    Matcher matcher = SCENE_FILE_PATTERN.matcher(file.name());
+                    if (matcher.matches()) {
+                        levelFiles.add(file.name());
+                    }
                 }
             }
         }
