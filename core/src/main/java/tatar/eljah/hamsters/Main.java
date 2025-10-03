@@ -21,6 +21,10 @@ import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.JsonReader;
 import com.badlogic.gdx.utils.JsonValue;
 import com.badlogic.gdx.utils.ObjectMap;
+import com.badlogic.gdx.utils.ObjectSet;
+import com.badlogic.gdx.utils.async.AsyncExecutor;
+import com.badlogic.gdx.utils.async.AsyncResult;
+import com.badlogic.gdx.utils.async.AsyncTask;
 import com.badlogic.gdx.files.FileHandle;
 import io.github.fxzjshm.gdx.svg2pixmap.Svg2Pixmap;
 import tatar.eljah.hamsters.PixmapCache;
@@ -61,6 +65,13 @@ public class Main extends ApplicationAdapter {
     private FileHandle cacheDir;
     private int[] corridorCenters;
     private final ObjectMap<String, BlockTemplate> blockTemplateCache = new ObjectMap<>();
+    private AsyncExecutor loaderExecutor;
+    private final Array<LoadingStep> loadingSteps = new Array<>();
+    private LoadingStep currentStep;
+    private int currentStepIndex;
+    private float completedWeight;
+    private float totalWeight;
+    private JsonValue sceneJson;
     private int sceneWidth = 800;
     private int sceneHeight = 600;
     @Override
@@ -69,7 +80,7 @@ public class Main extends ApplicationAdapter {
             Svg2Pixmap.generateScale = 1;
         }
 
-        JsonValue sceneJson = null;
+        sceneJson = null;
         try {
             sceneJson = new JsonReader().parse(Gdx.files.internal("scenes/scene.json"));
         } catch (Exception e) {
@@ -101,52 +112,9 @@ public class Main extends ApplicationAdapter {
             cacheDir = PixmapCache.resolveCacheDir();
         }
 
-        int completed = 0;
-        int total = 3;
-
-        String hamsterSvg = Gdx.files.internal("hamster4.svg").readString();
-        float finalHamsterStroke = Math.max(1.5f, Gdx.graphics.getWidth() / 400f);
-        float hamsterStrokeScale = computeStrokeScale(hamsterSvg, finalHamsterStroke);
-        hamsterSvg = hamsterSvg.replaceAll("stroke-width=\\\"[0-9.]+\\\"",
-                "stroke-width=\\\"" + hamsterStrokeScale + "\\\"");
-        Pixmap hamsterPixmap = loadCachedSvg("hamster", hamsterSvg, 256, 256);
-        applyBallpointEffect(hamsterPixmap);
-        hamsterPixmap = trimTransparent(hamsterPixmap);
-        hamsterTexture = new Texture(hamsterPixmap);
-        hamsterTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
-        hamsterPixmap.dispose();
-        loadingProgress = ++completed / (float) total;
-
-        Pixmap gradePixmap = loadCachedSvg("grade", Gdx.files.internal("grade.svg").readString(), 64, 64);
-        gradeTexture = new Texture(gradePixmap);
-        gradePixmap.dispose();
-        loadingProgress = ++completed / (float) total;
-
-        String backgroundFile = "liner.svg";
-        if (sceneJson != null) {
-            backgroundFile = sceneJson.getString("background", backgroundFile);
-        }
-        FileHandle backgroundHandle = Gdx.files.internal(backgroundFile);
-        String backgroundSvg;
-        try {
-            backgroundSvg = backgroundHandle.readString();
-        } catch (Exception e) {
-            Gdx.app.error("Main", "Failed to load background '" + backgroundFile + "', falling back to liner.svg", e);
-            backgroundFile = "liner.svg";
-            backgroundHandle = Gdx.files.internal(backgroundFile);
-            backgroundSvg = backgroundHandle.readString();
-        }
-        String cacheName = ("scene-" + backgroundFile).replace('/', '_').replace('\\', '_').replace('.', '_');
-        backgroundPixmap = loadCachedSvg(cacheName, backgroundSvg, sceneWidth, sceneHeight);
-        backgroundTexture = new Texture(backgroundPixmap);
-        loadingProgress = ++completed / (float) total;
-
-        calculateCorridors();
-        sceneBlocks = loadSceneBlocks(sceneJson);
-        controlRenderer = new OnscreenControlRenderer();
-        resetGame();
-        loading = false;
-        Gdx.app.log("Main", "Assets loaded");
+        loaderExecutor = new AsyncExecutor(1);
+        prepareLoadingSteps();
+        startNextLoadingStep();
     }
 
     private void calculateCorridors() {
@@ -218,6 +186,148 @@ public class Main extends ApplicationAdapter {
         return result;
     }
 
+    private void prepareLoadingSteps() {
+        loadingSteps.clear();
+        currentStep = null;
+        currentStepIndex = 0;
+        completedWeight = 0f;
+        totalWeight = 0f;
+
+        final String hamsterSvgOriginal = Gdx.files.internal("hamster4.svg").readString();
+        final float finalHamsterStroke = Math.max(1.5f, Gdx.graphics.getWidth() / 400f);
+        final float hamsterStrokeScale = computeStrokeScale(hamsterSvgOriginal, finalHamsterStroke);
+        final String hamsterSvg = hamsterSvgOriginal.replaceAll("stroke-width=\\\"[0-9.]+\\\"",
+                "stroke-width=\\\"" + hamsterStrokeScale + "\\\"");
+        loadingSteps.add(new SvgTextureStep(1f, "hamster", hamsterSvg, 256, 256,
+                new PixmapProcessor() {
+                    @Override
+                    public Pixmap process(Pixmap pixmap) {
+                        applyBallpointEffect(pixmap);
+                        return trimTransparent(pixmap);
+                    }
+                },
+                new PixmapConsumer() {
+                    @Override
+                    public void accept(Pixmap pixmap) {
+                        hamsterTexture = new Texture(pixmap);
+                        hamsterTexture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+                        pixmap.dispose();
+                    }
+                }));
+
+        final String gradeSvg = Gdx.files.internal("grade.svg").readString();
+        loadingSteps.add(new SvgTextureStep(1f, "grade", gradeSvg, 64, 64,
+                null,
+                new PixmapConsumer() {
+                    @Override
+                    public void accept(Pixmap pixmap) {
+                        gradeTexture = new Texture(pixmap);
+                        pixmap.dispose();
+                    }
+                }));
+
+        String backgroundFile = "liner.svg";
+        if (sceneJson != null) {
+            backgroundFile = sceneJson.getString("background", backgroundFile);
+        }
+        FileHandle backgroundHandle = Gdx.files.internal(backgroundFile);
+        String backgroundSvg;
+        try {
+            backgroundSvg = backgroundHandle.readString();
+        } catch (Exception e) {
+            Gdx.app.error("Main", "Failed to load background '" + backgroundFile + "', falling back to liner.svg", e);
+            backgroundFile = "liner.svg";
+            backgroundHandle = Gdx.files.internal(backgroundFile);
+            backgroundSvg = backgroundHandle.readString();
+        }
+        final String backgroundCacheName = ("scene-" + backgroundFile).replace('/', '_').replace('\\', '_').replace('.', '_');
+        final String backgroundSvgFinal = backgroundSvg;
+        loadingSteps.add(new SvgTextureStep(1f, backgroundCacheName, backgroundSvgFinal, sceneWidth, sceneHeight,
+                null,
+                new PixmapConsumer() {
+                    @Override
+                    public void accept(Pixmap pixmap) {
+                        backgroundPixmap = pixmap;
+                        backgroundTexture = new Texture(backgroundPixmap);
+                    }
+                }));
+
+        ObjectSet<String> blockFiles = new ObjectSet<>();
+        if (sceneJson != null) {
+            JsonValue blocksJson = sceneJson.get("blocks");
+            if (blocksJson != null) {
+                for (JsonValue blockValue : blocksJson) {
+                    String blockFile = blockValue.getString("block", null);
+                    if (blockFile == null) {
+                        continue;
+                    }
+                    String resolved = blockFile.contains("/") ? blockFile : "blocks/" + blockFile;
+                    blockFiles.add(resolved);
+                }
+            }
+        }
+
+        for (String resolved : blockFiles) {
+            loadingSteps.add(new BlockTemplateStep(resolved));
+        }
+
+        totalWeight = 0f;
+        for (LoadingStep step : loadingSteps) {
+            totalWeight += step.getWeight();
+        }
+        if (totalWeight <= 0f) {
+            totalWeight = 1f;
+        }
+    }
+
+    private void startNextLoadingStep() {
+        if (currentStepIndex < loadingSteps.size) {
+            currentStep = loadingSteps.get(currentStepIndex);
+            currentStep.start();
+        } else {
+            currentStep = null;
+            if (loading) {
+                finishLoading();
+            }
+        }
+    }
+
+    private void updateLoading() {
+        if (!loading) {
+            return;
+        }
+        if (currentStep == null && currentStepIndex < loadingSteps.size) {
+            startNextLoadingStep();
+        }
+
+        float currentContribution = 0f;
+        if (currentStep != null) {
+            if (currentStep.update()) {
+                completedWeight += currentStep.getWeight();
+                currentStep = null;
+                currentStepIndex++;
+                if (currentStepIndex >= loadingSteps.size) {
+                    loadingProgress = completedWeight / totalWeight;
+                    finishLoading();
+                    return;
+                }
+                startNextLoadingStep();
+            } else {
+                currentContribution = currentStep.getProgress() * currentStep.getWeight();
+            }
+        }
+        loadingProgress = (completedWeight + currentContribution) / totalWeight;
+    }
+
+    private void finishLoading() {
+        calculateCorridors();
+        sceneBlocks = loadSceneBlocks(sceneJson);
+        controlRenderer = new OnscreenControlRenderer();
+        resetGame();
+        loading = false;
+        Gdx.app.log("Main", "Assets loaded");
+    }
+
     private BlockTemplate loadBlockTemplate(String blockFile) {
         if (blockFile == null || blockFile.isEmpty()) {
             return null;
@@ -227,6 +337,22 @@ public class Main extends ApplicationAdapter {
         if (cached != null) {
             return cached;
         }
+        BlockTemplateLoadResult result = loadBlockTemplateData(resolved);
+        if (result == null) {
+            return null;
+        }
+        Texture texture = null;
+        if (result.pixmap != null) {
+            texture = new Texture(result.pixmap);
+            texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+            result.pixmap.dispose();
+        }
+        BlockTemplate template = new BlockTemplate(result.canvasWidth, result.canvasHeight, result.body, result.ascenders, result.descenders, result.drawBounds, texture);
+        blockTemplateCache.put(resolved, template);
+        return template;
+    }
+
+    private BlockTemplateLoadResult loadBlockTemplateData(String resolved) {
         JsonValue json;
         FileHandle jsonHandle;
         try {
@@ -245,7 +371,7 @@ public class Main extends ApplicationAdapter {
         float svgY = json.getFloat("svgY", 0f);
         RectangleData svgBounds = parseRectangle(json.get("svgBounds"));
 
-        Texture texture = null;
+        Pixmap pixmap = null;
         RectangleData drawBounds = null;
         String svgFileName = json.getString("svg", null);
         if (svgFileName != null) {
@@ -253,17 +379,15 @@ public class Main extends ApplicationAdapter {
             if (!svgHandle.exists()) {
                 Gdx.app.error("Main", "SVG '" + svgHandle.path() + "' for block template '" + resolved + "' not found");
             } else {
-                BlockVisual visual = loadBlockVisual(resolved, svgHandle, svgBounds, svgScale, svgY, templateCanvasWidth, templateCanvasHeight);
+                BlockVisualPixmap visual = loadBlockVisualPixmap(resolved, svgHandle, svgBounds, svgScale, svgY, templateCanvasWidth, templateCanvasHeight);
                 if (visual != null) {
-                    texture = visual.texture;
+                    pixmap = visual.pixmap;
                     drawBounds = visual.drawBounds;
                 }
             }
         }
 
-        BlockTemplate template = new BlockTemplate(templateCanvasWidth, templateCanvasHeight, body, ascenders, descenders, drawBounds, texture);
-        blockTemplateCache.put(resolved, template);
-        return template;
+        return new BlockTemplateLoadResult(templateCanvasWidth, templateCanvasHeight, body, ascenders, descenders, drawBounds, pixmap);
     }
 
     private static RectangleData parseRectangle(JsonValue value) {
@@ -329,13 +453,13 @@ public class Main extends ApplicationAdapter {
         return new Rectangle(x, y, data.width, data.height);
     }
 
-    private BlockVisual loadBlockVisual(String cacheKey,
-                                        FileHandle svgHandle,
-                                        RectangleData svgBounds,
-                                        float svgScale,
-                                        float svgY,
-                                        float canvasWidth,
-                                        float canvasHeight) {
+    private BlockVisualPixmap loadBlockVisualPixmap(String cacheKey,
+                                                    FileHandle svgHandle,
+                                                    RectangleData svgBounds,
+                                                    float svgScale,
+                                                    float svgY,
+                                                    float canvasWidth,
+                                                    float canvasHeight) {
         String svg;
         try {
             svg = svgHandle.readString();
@@ -375,8 +499,6 @@ public class Main extends ApplicationAdapter {
         }
 
         applyBallpointEffect(pixmap, 0.7f);
-        Texture texture = new Texture(pixmap);
-        texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
 
         float drawWidth = svgBounds != null ? svgBounds.width * svgScale : pixmap.getWidth();
         float drawHeight = svgBounds != null ? svgBounds.height * svgScale : pixmap.getHeight();
@@ -387,8 +509,7 @@ public class Main extends ApplicationAdapter {
                 drawHeight
         );
 
-        pixmap.dispose();
-        return new BlockVisual(texture, drawBounds);
+        return new BlockVisualPixmap(pixmap, drawBounds);
     }
 
     private static String sanitizeCacheKey(String key) {
@@ -447,12 +568,229 @@ public class Main extends ApplicationAdapter {
         }
     }
 
-    private static class BlockVisual {
-        final Texture texture;
+    private interface LoadingStep {
+        void start();
+
+        boolean update();
+
+        float getProgress();
+
+        float getWeight();
+    }
+
+    private abstract class AsyncLoadingStep implements LoadingStep {
+        private final float weight;
+        private AsyncResult<Void> future;
+        private volatile boolean started;
+        private volatile boolean finished;
+        private volatile float progress;
+        private volatile Throwable failure;
+
+        AsyncLoadingStep(float weight) {
+            this.weight = weight;
+        }
+
+        @Override
+        public void start() {
+            if (started) {
+                return;
+            }
+            started = true;
+            future = loaderExecutor.submit(new AsyncTask<Void>() {
+                @Override
+                public Void call() {
+                    try {
+                        runAsync();
+                    } catch (Throwable t) {
+                        failure = t;
+                    }
+                    return null;
+                }
+            });
+        }
+
+        @Override
+        public boolean update() {
+            if (!started || finished) {
+                return finished;
+            }
+            if (future.isDone()) {
+                finished = true;
+                try {
+                    future.get();
+                } catch (Throwable t) {
+                    if (failure == null) {
+                        failure = t;
+                    }
+                }
+                if (failure != null) {
+                    Gdx.app.error("Main", "Loading step failed", failure);
+                    onAsyncFailed(failure);
+                } else {
+                    completeOnMainThread();
+                }
+                return true;
+            }
+            return false;
+        }
+
+        @Override
+        public float getProgress() {
+            return finished ? 1f : progress;
+        }
+
+        protected void setProgress(float progress) {
+            this.progress = MathUtils.clamp(progress, 0f, 1f);
+        }
+
+        @Override
+        public float getWeight() {
+            return weight;
+        }
+
+        protected void onAsyncFailed(Throwable throwable) {
+            // default no-op
+        }
+
+        protected abstract void runAsync();
+
+        protected abstract void completeOnMainThread();
+    }
+
+    private interface PixmapProcessor {
+        Pixmap process(Pixmap pixmap);
+    }
+
+    private interface PixmapConsumer {
+        void accept(Pixmap pixmap);
+    }
+
+    private static class BlockTemplateLoadResult {
+        final float canvasWidth;
+        final float canvasHeight;
+        final RectangleData body;
+        final Array<RectangleData> ascenders;
+        final Array<RectangleData> descenders;
+        final RectangleData drawBounds;
+        final Pixmap pixmap;
+
+        BlockTemplateLoadResult(float canvasWidth,
+                               float canvasHeight,
+                               RectangleData body,
+                               Array<RectangleData> ascenders,
+                               Array<RectangleData> descenders,
+                               RectangleData drawBounds,
+                               Pixmap pixmap) {
+            this.canvasWidth = canvasWidth;
+            this.canvasHeight = canvasHeight;
+            this.body = body;
+            this.ascenders = ascenders;
+            this.descenders = descenders;
+            this.drawBounds = drawBounds;
+            this.pixmap = pixmap;
+        }
+    }
+
+    private class SvgTextureStep extends AsyncLoadingStep {
+        private final String cacheKey;
+        private final String svg;
+        private final int width;
+        private final int height;
+        private final PixmapProcessor processor;
+        private final PixmapConsumer consumer;
+        private Pixmap result;
+
+        SvgTextureStep(float weight,
+                       String cacheKey,
+                       String svg,
+                       int width,
+                       int height,
+                       PixmapProcessor processor,
+                       PixmapConsumer consumer) {
+            super(weight);
+            this.cacheKey = cacheKey;
+            this.svg = svg;
+            this.width = width;
+            this.height = height;
+            this.processor = processor;
+            this.consumer = consumer;
+        }
+
+        @Override
+        protected void runAsync() {
+            Pixmap pixmap = loadCachedSvg(cacheKey, svg, width, height);
+            if (processor != null) {
+                Pixmap processed = processor.process(pixmap);
+                if (processed != null) {
+                    pixmap = processed;
+                }
+            }
+            result = pixmap;
+        }
+
+        @Override
+        protected void completeOnMainThread() {
+            if (result == null) {
+                return;
+            }
+            try {
+                if (consumer != null) {
+                    consumer.accept(result);
+                } else {
+                    result.dispose();
+                }
+            } finally {
+                result = null;
+            }
+        }
+    }
+
+    private class BlockTemplateStep extends AsyncLoadingStep {
+        private final String resolved;
+        private BlockTemplateLoadResult result;
+
+        BlockTemplateStep(String resolved) {
+            super(1f);
+            this.resolved = resolved;
+        }
+
+        @Override
+        protected void runAsync() {
+            result = loadBlockTemplateData(resolved);
+        }
+
+        @Override
+        protected void completeOnMainThread() {
+            if (result == null) {
+                return;
+            }
+            try {
+                if (blockTemplateCache.containsKey(resolved)) {
+                    if (result.pixmap != null) {
+                        result.pixmap.dispose();
+                    }
+                    return;
+                }
+                Texture texture = null;
+                if (result.pixmap != null) {
+                    texture = new Texture(result.pixmap);
+                    texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
+                    result.pixmap.dispose();
+                }
+                BlockTemplate template = new BlockTemplate(result.canvasWidth, result.canvasHeight, result.body, result.ascenders, result.descenders, result.drawBounds, texture);
+                blockTemplateCache.put(resolved, template);
+            } finally {
+                result = null;
+            }
+        }
+    }
+
+    private static class BlockVisualPixmap {
+        final Pixmap pixmap;
         final RectangleData drawBounds;
 
-        BlockVisual(Texture texture, RectangleData drawBounds) {
-            this.texture = texture;
+        BlockVisualPixmap(Pixmap pixmap, RectangleData drawBounds) {
+            this.pixmap = pixmap;
             this.drawBounds = drawBounds;
         }
     }
@@ -831,6 +1169,9 @@ public class Main extends ApplicationAdapter {
     @Override
     public void render() {
         if (loading) {
+            updateLoading();
+        }
+        if (loading) {
             Gdx.gl.glClearColor(0, 0, 0, 1);
             Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
@@ -985,6 +1326,9 @@ public class Main extends ApplicationAdapter {
         if (backgroundMusic != null) {
             backgroundMusic.stop();
             backgroundMusic.dispose();
+        }
+        if (loaderExecutor != null) {
+            loaderExecutor.dispose();
         }
         for (BlockTemplate template : blockTemplateCache.values()) {
             if (template.texture != null) {
