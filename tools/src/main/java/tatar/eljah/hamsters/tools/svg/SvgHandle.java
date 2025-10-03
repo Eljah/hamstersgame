@@ -1,23 +1,23 @@
-package tatar.eljah.hamsters.tools.blockeditor;
+package tatar.eljah.hamsters.tools.svg;
 
 import org.apache.batik.gvt.GraphicsNode;
 
 import java.awt.geom.Rectangle2D;
 
-final class SvgHandle {
+public final class SvgHandle {
     private final GraphicsNode graphicsNode;
     private final Rectangle2D bounds;
 
-    SvgHandle(GraphicsNode graphicsNode, Rectangle2D bounds) {
+    public SvgHandle(GraphicsNode graphicsNode, Rectangle2D bounds) {
         this.graphicsNode = graphicsNode;
         this.bounds = bounds;
     }
 
-    GraphicsNode getGraphicsNode() {
+    public GraphicsNode getGraphicsNode() {
         return graphicsNode;
     }
 
-    Rectangle2D getBounds() {
+    public Rectangle2D getBounds() {
         return bounds;
     }
 }

@@ -1,4 +1,4 @@
-package tatar.eljah.hamsters.tools.blockeditor;
+package tatar.eljah.hamsters.tools.svg;
 
 import org.apache.batik.anim.dom.SAXSVGDocumentFactory;
 import org.apache.batik.bridge.BridgeContext;
@@ -13,15 +13,15 @@ import java.awt.geom.Rectangle2D;
 import java.io.File;
 import java.io.IOException;
 
-final class SvgLoader {
+public final class SvgLoader {
     private SvgLoader() {
     }
 
-    static SvgHandle load(File file) throws IOException {
+    public static SvgHandle load(File file) throws IOException {
         return load(file.toURI().toString());
     }
 
-    static SvgHandle load(String uri) throws IOException {
+    public static SvgHandle load(String uri) throws IOException {
         String parser = XMLResourceDescriptor.getXMLParserClassName();
         SAXSVGDocumentFactory factory = new SAXSVGDocumentFactory(parser);
         SVGDocument document = factory.createSVGDocument(uri);
