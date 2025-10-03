@@ -40,6 +40,7 @@ configure(subprojects - project(':android')) {
     File assetsFolder = new File("${project.rootDir}/assets/")
     // projectFolder/assets/assets.txt
     File assetsFile = new File(assetsFolder, "assets.txt")
+    outputs.file(assetsFile)
     // delete that file in case we've already created it
     assetsFile.delete()
 
