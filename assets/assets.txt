@@ -24,6 +24,8 @@ hamster_old.svg
 libgdx.png
 liner.svg
 scenes/scene.json
+scenes/scene1.json
+scenes/scene2.json
 ui/font-list.fnt
 ui/font-subtitle.fnt
 ui/font-window.fnt
