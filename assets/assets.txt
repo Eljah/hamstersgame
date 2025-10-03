@@ -1,6 +1,9 @@
 aldermeshka.mp3
 block.png
 block.svg
+block2.svg
+blocks/hamster.json
+blocks/hamster.svg
 com/badlogic/gdx/utils/lsans-15.fnt
 com/badlogic/gdx/utils/lsans-15.png
 controls.png
@@ -9,11 +12,14 @@ grade.svg
 hamster.svg
 hamster2-removebg-preview.png
 hamster2.png
+hamster3.svg
+hamster4.png
 hamster4.svg
 hamster_old.png
 hamster_old.svg
 libgdx.png
 liner.svg
+scenes/scene.json
 ui/font-list.fnt
 ui/font-subtitle.fnt
 ui/font-window.fnt

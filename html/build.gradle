@@ -44,7 +44,7 @@ dependencies {
 import org.akhikhl.gretty.AppBeforeIntegrationTestTask
 import org.docstr.gradle.plugins.gwt.GwtSuperDev
 
-gretty.httpPort = 8087
+gretty.httpPort = 8092
 // The line below will need to be changed only if you change the build directory to something other than "build".
 gretty.resourceBase = "${project.layout.buildDirectory.asFile.get().absolutePath}\\gwt\\draftOut"
 gretty.contextPath = "/"

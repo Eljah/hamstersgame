@@ -1,0 +1,8 @@
+{
+  "background": "liner.svg",
+  "canvasWidth": 800,
+  "canvasHeight": 600,
+  "blocks": [
+    {"block": "hamster.json", "x": 24.000, "y": 231.000}
+  ]
+}
