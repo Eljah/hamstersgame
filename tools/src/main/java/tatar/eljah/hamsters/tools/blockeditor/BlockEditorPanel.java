@@ -28,6 +28,7 @@ import java.util.Locale;
 
 class BlockEditorPanel extends JPanel {
     private final BufferedImage backgroundImage;
+    private final List<Double> guideLineCenters;
     private SvgHandle svgHandle;
     private Rectangle2D svgBounds;
     private double svgScale = 1.0;
@@ -52,6 +53,7 @@ class BlockEditorPanel extends JPanel {
 
     BlockEditorPanel() {
         backgroundImage = loadBackgroundImage();
+        guideLineCenters = detectGuideLineCenters(backgroundImage);
         setBackground(Color.WHITE);
         setPreferredSize(new Dimension(backgroundImage.getWidth(), backgroundImage.getHeight()));
         setFocusable(true);
@@ -70,6 +72,14 @@ class BlockEditorPanel extends JPanel {
 
     boolean hasSvgLoaded() {
         return svgHandle != null;
+    }
+
+    String moveSelectedRegionUpOneLine() {
+        return moveSelectedRegionVertical(-1);
+    }
+
+    String moveSelectedRegionDownOneLine() {
+        return moveSelectedRegionVertical(1);
     }
 
     double getSvgScale() {
@@ -111,6 +121,36 @@ class BlockEditorPanel extends JPanel {
         } catch (IOException e) {
             throw new IllegalStateException("Failed to load background", e);
         }
+    }
+
+    private static List<Double> detectGuideLineCenters(BufferedImage image) {
+        List<Double> centers = new ArrayList<>();
+        if (image == null) {
+            return centers;
+        }
+        int sampleX = image.getWidth() / 2;
+        boolean inLine = false;
+        int lineStart = 0;
+        for (int y = 0; y < image.getHeight(); y++) {
+            int argb = image.getRGB(sampleX, y);
+            int alpha = (argb >>> 24) & 0xFF;
+            int rgb = argb & 0x00FFFFFF;
+            boolean isLine = alpha > 0 && rgb != 0x00FFFFFF;
+            if (isLine) {
+                if (!inLine) {
+                    inLine = true;
+                    lineStart = y;
+                }
+            } else if (inLine) {
+                int lineEnd = y - 1;
+                centers.add((lineStart + lineEnd) / 2.0);
+                inLine = false;
+            }
+        }
+        if (inLine) {
+            centers.add((lineStart + image.getHeight() - 1) / 2.0);
+        }
+        return centers;
     }
 
     private static BufferedImage rasterizeSvg(SvgHandle handle) throws IOException {
@@ -244,6 +284,68 @@ class BlockEditorPanel extends JPanel {
         sb.append(String.format(Locale.US,
                 "{\"x\": %.5f, \"y\": %.5f, \"width\": %.5f, \"height\": %.5f}",
                 rect.x, rect.y, rect.width, rect.height));
+    }
+
+    private String moveSelectedRegionVertical(int direction) {
+        if (selectedRegion == null) {
+            Toolkit.getDefaultToolkit().beep();
+            return "No region selected";
+        }
+        if (guideLineCenters.isEmpty()) {
+            Toolkit.getDefaultToolkit().beep();
+            return "No guide lines detected";
+        }
+        Rectangle2D.Double rect = selectedRegion.getRect();
+        double centerY = rect.y + rect.height / 2.0;
+        int currentIndex = findClosestGuideLineIndex(centerY);
+        if (currentIndex < 0) {
+            Toolkit.getDefaultToolkit().beep();
+            return "No nearby guide line";
+        }
+        int targetIndex = currentIndex + Integer.compare(direction, 0);
+        if (targetIndex < 0 || targetIndex >= guideLineCenters.size()) {
+            Toolkit.getDefaultToolkit().beep();
+            return direction < 0 ? "Already at top line" : "Already at bottom line";
+        }
+        double targetCenter = guideLineCenters.get(targetIndex);
+        double dy = targetCenter - centerY;
+        rect.y += dy;
+        clampRegion(rect);
+        repaint();
+        return direction < 0 ? "Moved block up" : "Moved block down";
+    }
+
+    private int findClosestGuideLineIndex(double centerY) {
+        if (guideLineCenters.isEmpty()) {
+            return -1;
+        }
+        int closestIndex = 0;
+        double closestDistance = Math.abs(guideLineCenters.get(0) - centerY);
+        for (int i = 1; i < guideLineCenters.size(); i++) {
+            double distance = Math.abs(guideLineCenters.get(i) - centerY);
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closestIndex = i;
+            }
+        }
+        return closestIndex;
+    }
+
+    private void clampRegion(Rectangle2D.Double rect) {
+        double maxX = backgroundImage.getWidth() - rect.width;
+        double maxY = backgroundImage.getHeight() - rect.height;
+        if (rect.x < 0) {
+            rect.x = 0;
+        }
+        if (rect.y < 0) {
+            rect.y = 0;
+        }
+        if (rect.x > maxX) {
+            rect.x = maxX;
+        }
+        if (rect.y > maxY) {
+            rect.y = maxY;
+        }
     }
 
     @Override
