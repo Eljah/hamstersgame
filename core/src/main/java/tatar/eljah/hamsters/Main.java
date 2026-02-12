@@ -6,6 +6,7 @@ import com.badlogic.gdx.Input;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.Texture;
+import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.math.MathUtils;
@@ -14,13 +15,18 @@ import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.math.Intersector;
 import com.badlogic.gdx.utils.Array;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 public class Main extends ApplicationAdapter {
     private SpriteBatch batch;
     private Texture hamsterTexture;
-    private Texture gradeTexture;
     private Texture blockTexture;
     private Texture backgroundTexture;
     private BitmapFont font;
+    private ShapeRenderer shapeRenderer;
+    private float[] gradeSvgPoints;
+    private float gradeSvgStroke;
 
     private OrthographicCamera camera;
 
@@ -40,7 +46,7 @@ public class Main extends ApplicationAdapter {
     // Fallback delay that moves the game to the next scene even if the player
     // doesn't provide any input (useful for desktop builds without touch).
     private static final float GAME_OVER_AUTO_RESET_DELAY = 1.5f;
-    private static final float AUTO_WIN_DELAY = 0.75f;
+    private static final float AUTO_WIN_DELAY = 2.5f;
     private static final String TAG = "HamstersGame";
 
     private float autoWinTimer;
@@ -53,10 +59,15 @@ public class Main extends ApplicationAdapter {
     public void create() {
         batch = new SpriteBatch();
         hamsterTexture = new Texture("hamster.png");
-        gradeTexture = new Texture("grade.png");
         blockTexture = new Texture("block.png");
         backgroundTexture = new Texture("liner.png");
+        hamsterTexture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        blockTexture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
+        backgroundTexture.setFilter(Texture.TextureFilter.Nearest, Texture.TextureFilter.Nearest);
         font = new BitmapFont();
+        shapeRenderer = new ShapeRenderer();
+        gradeSvgPoints = loadGradeSvgPoints();
+        gradeSvgStroke = loadGradeSvgStroke();
 
         camera = new OrthographicCamera();
         camera.setToOrtho(false, 800, 600);
@@ -161,6 +172,50 @@ public class Main extends ApplicationAdapter {
     }
 
 
+    private float[] loadGradeSvgPoints() {
+        String svg = Gdx.files.internal("grade.svg").readString();
+        Matcher matcher = Pattern.compile("points\\s*=\\s*\"([^\"]+)\"").matcher(svg);
+        if (!matcher.find()) {
+            throw new IllegalStateException("grade.svg must contain a polyline points attribute");
+        }
+        String[] tokens = matcher.group(1).trim().split("[ ,\n\t]+");
+        if (tokens.length < 4 || tokens.length % 2 != 0) {
+            throw new IllegalStateException("grade.svg points should contain x,y pairs");
+        }
+        float[] points = new float[tokens.length];
+        for (int i = 0; i < tokens.length; i++) {
+            points[i] = Float.parseFloat(tokens[i]);
+        }
+        return points;
+    }
+
+    private float loadGradeSvgStroke() {
+        String svg = Gdx.files.internal("grade.svg").readString();
+        Matcher matcher = Pattern.compile("stroke-width\\s*=\\s*\"([^\"]+)\"").matcher(svg);
+        if (!matcher.find()) {
+            return 2f;
+        }
+        return Float.parseFloat(matcher.group(1));
+    }
+
+
+    private void drawGradeSymbol(float x, float y, float size) {
+        float scale = size / 64f;
+        float stroke = Math.max(2f, gradeSvgStroke * scale);
+
+        shapeRenderer.setProjectionMatrix(camera.combined);
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Filled);
+        shapeRenderer.setColor(0.93f, 0.11f, 0.14f, 1f);
+        for (int i = 0; i < gradeSvgPoints.length - 2; i += 2) {
+            float x1 = x + gradeSvgPoints[i] * scale;
+            float y1 = y + (64f - gradeSvgPoints[i + 1]) * scale;
+            float x2 = x + gradeSvgPoints[i + 2] * scale;
+            float y2 = y + (64f - gradeSvgPoints[i + 3]) * scale;
+            shapeRenderer.rectLine(x1, y1, x2, y2, stroke);
+        }
+        shapeRenderer.end();
+    }
+
     @Override
     public void render() {
         if (gameOver) {
@@ -172,10 +227,11 @@ public class Main extends ApplicationAdapter {
             font.draw(batch, "Grade: " + gradeScore, 10, 560);
             if (hamsterWin) {
                 batch.draw(hamsterTexture, 350, 250, 100, 100);
-            } else {
-                batch.draw(gradeTexture, 350, 250, 100, 100);
             }
             batch.end();
+            if (!hamsterWin) {
+                drawGradeSymbol(350f, 250f, 100f);
+            }
             boolean allowRestart = gameOverElapsed >= GAME_OVER_INPUT_DELAY;
             if ((allowRestart && shouldRestartGame()) || gameOverElapsed >= GAME_OVER_AUTO_RESET_DELAY) {
                 resetGameWithReason("post-game-over restart");
@@ -200,13 +256,14 @@ public class Main extends ApplicationAdapter {
         batch.begin();
         batch.draw(backgroundTexture, 0, 0, 800, 600); // Draw background
         batch.draw(hamsterTexture, hamster.x, hamster.y);
-        batch.draw(gradeTexture, grade.x, grade.y);
         for (Rectangle block : blocks) {
             batch.draw(blockTexture, block.x, block.y);
         }
         font.draw(batch, "Hamster: " + hamsterScore, 10, 590);
         font.draw(batch, "Grade: " + gradeScore, 10, 560);
         batch.end();
+
+        drawGradeSymbol(grade.x, grade.y, grade.width);
 
         // Hamster movement
         if (Gdx.app.getType() == com.badlogic.gdx.Application.ApplicationType.Android) {
@@ -358,10 +415,10 @@ public class Main extends ApplicationAdapter {
     public void dispose() {
         batch.dispose();
         hamsterTexture.dispose();
-        gradeTexture.dispose();
         blockTexture.dispose();
         backgroundTexture.dispose();
         font.dispose();
+        shapeRenderer.dispose();
         controlRenderer.dispose();
     }
 }

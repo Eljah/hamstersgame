@@ -21,7 +21,6 @@ public class ToolsLauncher {
         private final String[] files = {
                 "block.png",
                 "controls.png",
-                "grade.png",
                 "hamster.png",
                 "libgdx.png",
                 "liner.png"
