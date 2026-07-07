@@ -111,7 +111,8 @@ public class Svg2Pixmap {
         checkGWT();
 
         StringTokenizer stringTokenizer = new StringTokenizer(H.splitMixedTokens(d));
-        int strokeRadius = (int) Math.round(strokeWidth * Math.sqrt(1.0 * (pixmap.getWidth() * pixmap.getHeight()) / (width * height)) / 2);
+        double scaledStrokeWidth = strokeWidth * Math.sqrt(1.0 * (pixmap.getWidth() * pixmap.getHeight()) / (width * height));
+        int strokeRadius = Math.max(1, (int) Math.ceil(scaledStrokeWidth / 2.0));
 
         Vector2 currentPosition = new Vector2(0, 0);// Current position in pixmap.
         Vector2 initialPoint = new Vector2(0, 0);// Used by command 'M'.

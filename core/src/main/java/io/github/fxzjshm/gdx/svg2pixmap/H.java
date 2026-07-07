@@ -3,7 +3,6 @@ package io.github.fxzjshm.gdx.svg2pixmap;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.math.GridPoint2;
-import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.GdxRuntimeException;
@@ -285,9 +284,6 @@ public class H {
             }
             int p = (int) Math.round(x), q = (int) Math.round(y);
             if (strokeWidth > 0) {
-                float jitter = strokeWidth * 0.3f;
-                p += MathUtils.random(-jitter, jitter);
-                q += MathUtils.random(-jitter, jitter);
                 for (int r = strokeWidth - 1; r >= 0; r--) {
                     float alpha = stroke.a * (0.2f + 0.8f * (1f - r / (float) strokeWidth));
                     pixmap.setColor(stroke.r, stroke.g, stroke.b, alpha);

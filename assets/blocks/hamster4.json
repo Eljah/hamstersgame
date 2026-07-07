@@ -1,0 +1,20 @@
+{
+  "svg": "hamster-line.svg",
+  "scale": 0.10000,
+  "svgY": 209.91980,
+  "canvasWidth": 800,
+  "canvasHeight": 600,
+  "svgBounds": {
+    "x": 220.00000,
+    "y": 200.00000,
+    "width": 584.00000,
+    "height": 500.00000
+  },
+  "body": {"x": 363.00000, "y": 228.00000, "width": 74.00000, "height": 45.00000},
+  "ascenders": [
+    {"x": 382.00000, "y": 207.00000, "width": 29.00000, "height": 16.00000}
+  ],
+  "descenders": [
+    {"x": 371.00000, "y": 274.00000, "width": 64.00000, "height": 14.00000}
+  ]
+}

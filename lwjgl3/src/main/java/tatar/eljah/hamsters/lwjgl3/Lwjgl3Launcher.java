@@ -11,6 +11,11 @@ public class Lwjgl3Launcher {
         for (String arg : args) {
             if ("headless".equals(arg)) {
                 System.setProperty("headless", "true");
+            } else if ("line-diagnostic".equals(arg)) {
+                System.setProperty("lineDiagnostic", "true");
+            } else if (arg.startsWith("line-screenshot=")) {
+                System.setProperty("lineDiagnostic", "true");
+                System.setProperty("lineDiagnosticScreenshot", arg.substring("line-screenshot=".length()));
             }
         }
         createApplication();
