@@ -55,7 +55,7 @@ public class Main extends ApplicationAdapter {
     private static final float BLOCK_SVG_PADDING = 4f;
     private static final float LINE_EFFECT_BASE_OPACITY = 0.88f;
     private static final float NEW_LINE_INK_ALPHA_MULTIPLIER = 1.95f;
-    private static final String LINE_RENDER_CACHE_VERSION = "line-render-v117-tight-curve-fill-threshold";
+    private static final String LINE_RENDER_CACHE_VERSION = "line-render-v119-short-defects-balanced-alpha-noise";
 
     private SpriteBatch batch;
     private Texture hamsterTexture;
@@ -1820,6 +1820,7 @@ public class Main extends ApplicationAdapter {
                 float alpha = BALLPOINT_TARGET_COVERAGE * 0.25f * pressure
                         * (profile * startWave * fiber + middleTailFill)
                         * alongFalloff * startInk * dryBallMask;
+                alpha *= 1.14f * topAlphaNoise(s, cross, r, lineWidth);
                 alpha = MathUtils.clamp(alpha, 0f, 0.96f);
                 coverage[x][y] = Math.max(coverage[x][y], alpha);
                 if (curveEdge > 0.10f && innerCurveLight > 0.03f) {
@@ -1843,11 +1844,11 @@ public class Main extends ApplicationAdapter {
         }
         float defectA = dryBallDefectPulse(inPeriod,
                 0.28f + 0.08f * pseudoInkNoise(periodIndex * 97 + 31, 11),
-                0.0125f + 0.006f * pseudoInkNoise(periodIndex * 71 + 17, 23),
+                0.0065f + 0.003f * pseudoInkNoise(periodIndex * 71 + 17, 23),
                 1.45f);
         float defectB = dryBallDefectPulse(inPeriod,
                 0.68f + 0.10f * pseudoInkNoise(periodIndex * 109 + 43, 19),
-                0.014f + 0.008f * pseudoInkNoise(periodIndex * 83 + 29, 37),
+                0.007f + 0.004f * pseudoInkNoise(periodIndex * 83 + 29, 37),
                 2.05f);
         float defect = Math.max(defectA, defectB * 0.88f);
         if (defect <= 0f) {
@@ -1862,6 +1863,17 @@ public class Main extends ApplicationAdapter {
         distance = Math.min(distance, 1f - distance);
         float pulse = 1f - smoothstep(length, length * edgeShape, distance);
         return MathUtils.clamp(pulse, 0f, 1f);
+    }
+
+    private static float topAlphaNoise(float s, float cross, float r, float lineWidth) {
+        float alongCell = MathUtils.floor(s / Math.max(1f, lineWidth * 0.42f));
+        float crossCell = MathUtils.floor(cross / Math.max(1f, lineWidth * 0.22f));
+        float coarse = pseudoInkNoise((int) alongCell * 47 + (int) crossCell * 17 + 13,
+                (int) crossCell * 83 + 29);
+        float fine = pseudoInkNoise(MathUtils.floor(s * 1.35f) * 37 + MathUtils.floor(cross * 2.1f) * 11 + 5,
+                MathUtils.floor(r * 31f) * 19 + 7);
+        float noise = MathUtils.clamp(coarse * 0.65f + fine * 0.35f, 0f, 1f);
+        return 1f - 0.35f * noise;
     }
 
     private static java.util.ArrayList<VectorSample> sampleVectorStroke(VectorStroke stroke) {
