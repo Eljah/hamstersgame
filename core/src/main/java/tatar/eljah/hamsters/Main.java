@@ -55,7 +55,7 @@ public class Main extends ApplicationAdapter {
     private static final float BLOCK_SVG_PADDING = 4f;
     private static final float LINE_EFFECT_BASE_OPACITY = 0.88f;
     private static final float NEW_LINE_INK_ALPHA_MULTIPLIER = 1.95f;
-    private static final String LINE_RENDER_CACHE_VERSION = "line-render-v91-short-double-dry-ball-mask";
+    private static final String LINE_RENDER_CACHE_VERSION = "line-render-v104-one-sided-curve-vein-mask";
 
     private SpriteBatch batch;
     private Texture hamsterTexture;
@@ -1417,11 +1417,20 @@ public class Main extends ApplicationAdapter {
         float scaleY = height / Math.max(1f, viewBox.height);
         float scale = (scaleX + scaleY) * 0.5f;
         float[][] coverage = new float[width][height];
+        float[][] curveVeinLight = new float[width][height];
         Color inkColor = strokes.get(0).color;
 
         for (VectorStroke stroke : strokes) {
             inkColor = stroke.color;
-            renderVectorBallpointStroke(coverage, width, height, stroke, scaleX, scaleY, scale);
+            renderVectorBallpointStroke(coverage, curveVeinLight, width, height, stroke, scaleX, scaleY, scale);
+        }
+
+        applyCurveVeinLightMask(coverage, curveVeinLight, width, height);
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                coverage[x][y] = MathUtils.clamp(coverage[x][y], 0f, 0.96f);
+            }
         }
 
         Pixmap.Blending old = pixmap.getBlending();
@@ -1449,7 +1458,20 @@ public class Main extends ApplicationAdapter {
         return 1f;
     }
 
+    private static void applyCurveVeinLightMask(float[][] coverage, float[][] curveVeinLight, int width, int height) {
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                float mask = curveVeinLight[x][y];
+                if (mask <= 0.01f || coverage[x][y] <= 0f) {
+                    continue;
+                }
+                coverage[x][y] *= 1f - 0.99f * MathUtils.clamp(mask, 0f, 1f);
+            }
+        }
+    }
+
     private static void renderVectorBallpointStroke(float[][] coverage,
+                                                    float[][] curveVeinLight,
                                                     int width,
                                                     int height,
                                                     VectorStroke stroke,
@@ -1490,6 +1512,7 @@ public class Main extends ApplicationAdapter {
             float ty = dy / len;
             float nx = -ty;
             float ny = tx;
+            float curveSign = curveSignAt(samples, i, tx, ty, scaleX, scaleY);
             while (nextStamp <= s1) {
                 if (nextStamp >= s0) {
                     float t = (nextStamp - s0) / segmentLength;
@@ -1498,13 +1521,47 @@ public class Main extends ApplicationAdapter {
                     float pressure = rollingPressure(nextStamp, pathLength, lineWidth);
                     float startDistance = distanceFromPressStart(nextStamp, pressStarts, lineWidth);
                     float startPress = startPressFromDistance(startDistance, lineWidth);
-                    drawRollingBallStamp(coverage, width, height, cx, cy, tx, ty, nx, ny, nextStamp,
-                            radius, maxRadius, lineWidth, period, pressure, startPress, startDistance);
+                    drawRollingBallStamp(coverage, curveVeinLight, width, height, cx, cy, tx, ty, nx, ny, nextStamp,
+                            radius, maxRadius, lineWidth, period, pressure, startPress, startDistance, curveSign);
                 }
                 nextStamp += stampStep;
             }
             prev = current;
         }
+    }
+
+    private static float curveSignAt(java.util.ArrayList<VectorSample> samples,
+                                     int index,
+                                     float tx,
+                                     float ty,
+                                     float scaleX,
+                                     float scaleY) {
+        float strongest = 0f;
+        if (index > 1) {
+            VectorSample a = samples.get(index - 2);
+            VectorSample b = samples.get(index - 1);
+            float px = (b.x - a.x) * scaleX;
+            float py = (b.y - a.y) * scaleY;
+            float len = (float) Math.sqrt(px * px + py * py);
+            if (len > 0.001f) {
+                float signed = (px / len) * ty - (py / len) * tx;
+                strongest = signed;
+            }
+        }
+        if (index < samples.size() - 1) {
+            VectorSample a = samples.get(index);
+            VectorSample b = samples.get(index + 1);
+            float px = (b.x - a.x) * scaleX;
+            float py = (b.y - a.y) * scaleY;
+            float len = (float) Math.sqrt(px * px + py * py);
+            if (len > 0.001f) {
+                float signed = tx * (py / len) - ty * (px / len);
+                if (Math.abs(signed) > Math.abs(strongest)) {
+                    strongest = signed;
+                }
+            }
+        }
+        return MathUtils.clamp(strongest, -1f, 1f);
     }
 
     private static java.util.ArrayList<Float> detectPressStarts(java.util.ArrayList<VectorSample> samples, float scale) {
@@ -1560,6 +1617,7 @@ public class Main extends ApplicationAdapter {
     }
 
     private static void drawRollingBallStamp(float[][] coverage,
+                                             float[][] curveVeinLight,
                                              int width,
                                              int height,
                                              float cx,
@@ -1575,7 +1633,8 @@ public class Main extends ApplicationAdapter {
                                              float period,
                                              float pressure,
                                              float startPress,
-                                             float startDistance) {
+                                             float startDistance,
+                                             float curveSign) {
         float activeRadius = MathUtils.lerp(radius, radius * 1.2f, startPress);
         int minX = Math.max(0, MathUtils.floor(cx - maxRadius - 1f));
         int maxX = Math.min(width - 1, MathUtils.ceil(cx + maxRadius + 1f));
@@ -1609,6 +1668,12 @@ public class Main extends ApplicationAdapter {
                 }
                 float body = 1f - smoothstep(0.94f, 1.08f, r);
                 float edgeVein = smoothstep(0.72f, 0.92f, r) * (1f - smoothstep(0.98f, 1.08f, r));
+                float curveAmount = MathUtils.clamp(Math.abs(curveSign) * 80f, 0f, 1f);
+                float directedSide = MathUtils.clamp(cross / Math.max(1f, capHalfWidth), 0f, 1f);
+                directedSide = directedSide * directedSide * (3f - 2f * directedSide);
+                float curveEdge = smoothstep(0.34f, 0.76f, r);
+                float curveLightPhase = 1f;
+                float innerCurveLight = curveLightPhase * curveAmount * directedSide * curveEdge;
                 float inwardRamp = smoothstep(0f, 0.92f, r);
                 float interiorInk = 0.18f + 0.42f * inwardRamp + 0.28f * rollingWave;
                 float profile = body * interiorInk + edgeVein * 0.92f;
@@ -1627,7 +1692,11 @@ public class Main extends ApplicationAdapter {
                 float alpha = BALLPOINT_TARGET_COVERAGE * 0.25f * pressure
                         * (profile * startWave * fiber + middleTailFill)
                         * alongFalloff * startInk * dryBallMask;
-                coverage[x][y] = Math.max(coverage[x][y], MathUtils.clamp(alpha, 0f, 0.96f));
+                alpha = MathUtils.clamp(alpha, 0f, 0.96f);
+                coverage[x][y] = Math.max(coverage[x][y], alpha);
+                if (curveEdge > 0.35f && innerCurveLight > 0.05f) {
+                    curveVeinLight[x][y] = Math.max(curveVeinLight[x][y], innerCurveLight * curveEdge);
+                }
             }
         }
     }
