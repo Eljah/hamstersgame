@@ -55,7 +55,7 @@ public class Main extends ApplicationAdapter {
     private static final float BLOCK_SVG_PADDING = 4f;
     private static final float LINE_EFFECT_BASE_OPACITY = 0.88f;
     private static final float NEW_LINE_INK_ALPHA_MULTIPLIER = 1.95f;
-    private static final String LINE_RENDER_CACHE_VERSION = "line-render-v88-start-press-ballpoint";
+    private static final String LINE_RENDER_CACHE_VERSION = "line-render-v91-short-double-dry-ball-mask";
 
     private SpriteBatch batch;
     private Texture hamsterTexture;
@@ -1496,9 +1496,10 @@ public class Main extends ApplicationAdapter {
                     float cx = MathUtils.lerp(x0, x1, t);
                     float cy = MathUtils.lerp(y0, y1, t);
                     float pressure = rollingPressure(nextStamp, pathLength, lineWidth);
-                    float startPress = startPressAt(nextStamp, pressStarts, lineWidth);
+                    float startDistance = distanceFromPressStart(nextStamp, pressStarts, lineWidth);
+                    float startPress = startPressFromDistance(startDistance, lineWidth);
                     drawRollingBallStamp(coverage, width, height, cx, cy, tx, ty, nx, ny, nextStamp,
-                            radius, maxRadius, lineWidth, period, pressure, startPress);
+                            radius, maxRadius, lineWidth, period, pressure, startPress, startDistance);
                 }
                 nextStamp += stampStep;
             }
@@ -1530,17 +1531,25 @@ public class Main extends ApplicationAdapter {
         return starts;
     }
 
-    private static float startPressAt(float s, java.util.ArrayList<Float> pressStarts, float lineWidth) {
+    private static float distanceFromPressStart(float s, java.util.ArrayList<Float> pressStarts, float lineWidth) {
         float length = Math.max(lineWidth * 5.5f, 10f);
-        float strongest = 0f;
+        float nearest = Float.MAX_VALUE;
         for (Float start : pressStarts) {
             float distance = s - start;
             if (distance < 0f || distance > length) {
                 continue;
             }
-            strongest = Math.max(strongest, 1f - smoothstep(0f, length, distance));
+            nearest = Math.min(nearest, distance);
         }
-        return strongest;
+        return nearest;
+    }
+
+    private static float startPressFromDistance(float distance, float lineWidth) {
+        if (distance == Float.MAX_VALUE) {
+            return 0f;
+        }
+        float length = Math.max(lineWidth * 5.5f, 10f);
+        return 1f - smoothstep(0f, length, distance);
     }
 
     private static float rollingPressure(float s, float pathLength, float lineWidth) {
@@ -1565,7 +1574,8 @@ public class Main extends ApplicationAdapter {
                                              float lineWidth,
                                              float period,
                                              float pressure,
-                                             float startPress) {
+                                             float startPress,
+                                             float startDistance) {
         float activeRadius = MathUtils.lerp(radius, radius * 1.2f, startPress);
         int minX = Math.max(0, MathUtils.floor(cx - maxRadius - 1f));
         int maxX = Math.min(width - 1, MathUtils.ceil(cx + maxRadius + 1f));
@@ -1584,10 +1594,17 @@ public class Main extends ApplicationAdapter {
                 float py = y + 0.5f - cy;
                 float along = px * tx + py * ty;
                 float cross = px * nx + py * ny;
-                float r = Math.abs(cross) / Math.max(1f, activeRadius);
                 float alongLimit = Math.max(1.2f, lineWidth * 0.18f);
                 float alongFalloff = 1f - smoothstep(alongLimit * 0.45f, alongLimit, Math.abs(along));
-                if (r > 1.08f || alongFalloff <= 0f) {
+                float localFromStart = startDistance == Float.MAX_VALUE ? Float.MAX_VALUE : startDistance + along;
+                float capHalfWidth = activeRadius;
+                if (localFromStart < 0f && localFromStart > -activeRadius) {
+                    float capU = localFromStart / activeRadius;
+                    capHalfWidth = activeRadius * (float) Math.sqrt(Math.max(0f, 1f - capU * capU));
+                    alongFalloff = 1f - smoothstep(activeRadius * 0.94f, activeRadius, -localFromStart);
+                }
+                float r = Math.abs(cross) / Math.max(1f, capHalfWidth);
+                if (r > 1.08f || alongFalloff <= 0f || localFromStart <= -activeRadius) {
                     continue;
                 }
                 float body = 1f - smoothstep(0.94f, 1.08f, r);
@@ -1596,22 +1613,58 @@ public class Main extends ApplicationAdapter {
                 float interiorInk = 0.18f + 0.42f * inwardRamp + 0.28f * rollingWave;
                 float profile = body * interiorInk + edgeVein * 0.92f;
                 float local = (inPeriod + 0.17f * r) % 1f;
-                float repeatedScratch = 1f;
-                if (drySeed > 0.42f && local > 0.34f && local < 0.52f && r < 0.84f) {
-                    repeatedScratch = 0.18f + 0.18f * pseudoInkNoise(periodIndex * 97 + 31, MathUtils.floor(r * 19f) + 5);
-                }
                 float fiber = 0.78f + 0.34f * pseudoInkNoise(MathUtils.floor(s * 0.37f) * 31 + MathUtils.floor(cross * 3f), MathUtils.floor(r * 23f) * 17 + 3);
                 if (wetSeed > 0.76f && local < 0.22f) {
                     fiber *= 1.20f;
                 }
+                float afterStart = startDistance == Float.MAX_VALUE ? 1f : smoothstep(lineWidth * 2.5f, lineWidth * 6.5f, startDistance);
+                float tailNoise = 0.58f + 0.42f * pseudoInkNoise(periodIndex * 131 + MathUtils.floor(local * 17f), MathUtils.floor(r * 29f) + 23);
+                float middleTailFill = 0.20f * body * (1f - edgeVein) * afterStart * tailNoise;
                 float waveMix = 0.74f + 0.26f * rollingWave;
                 float startInk = MathUtils.lerp(1f, 1.55f, startPress);
-                float startScratch = MathUtils.lerp(repeatedScratch, 1f, startPress);
                 float startWave = MathUtils.lerp(waveMix, 1.08f, startPress);
-                float alpha = BALLPOINT_TARGET_COVERAGE * 0.25f * pressure * profile * startWave * startScratch * fiber * alongFalloff * startInk;
+                float dryBallMask = dryBallDefectMask(inPeriod, periodIndex, r, lineWidth, startDistance);
+                float alpha = BALLPOINT_TARGET_COVERAGE * 0.25f * pressure
+                        * (profile * startWave * fiber + middleTailFill)
+                        * alongFalloff * startInk * dryBallMask;
                 coverage[x][y] = Math.max(coverage[x][y], MathUtils.clamp(alpha, 0f, 0.96f));
             }
         }
+    }
+
+    private static float dryBallDefectMask(float inPeriod,
+                                           int periodIndex,
+                                           float r,
+                                           float lineWidth,
+                                           float startDistance) {
+        if (startDistance != Float.MAX_VALUE && startDistance < lineWidth * 4.2f) {
+            return 1f;
+        }
+        float centerWeight = 1f - smoothstep(0.66f, 0.96f, r);
+        if (centerWeight <= 0f) {
+            return 1f;
+        }
+        float defectA = dryBallDefectPulse(inPeriod,
+                0.28f + 0.08f * pseudoInkNoise(periodIndex * 97 + 31, 11),
+                0.0125f + 0.006f * pseudoInkNoise(periodIndex * 71 + 17, 23),
+                1.45f);
+        float defectB = dryBallDefectPulse(inPeriod,
+                0.68f + 0.10f * pseudoInkNoise(periodIndex * 109 + 43, 19),
+                0.014f + 0.008f * pseudoInkNoise(periodIndex * 83 + 29, 37),
+                2.05f);
+        float defect = Math.max(defectA, defectB * 0.88f);
+        if (defect <= 0f) {
+            return 1f;
+        }
+        float depth = 0.80f + 0.16f * pseudoInkNoise(periodIndex * 131 + 5, 41);
+        return MathUtils.clamp(1f - defect * depth * centerWeight, 0.05f, 1f);
+    }
+
+    private static float dryBallDefectPulse(float inPeriod, float center, float length, float edgeShape) {
+        float distance = Math.abs(inPeriod - center);
+        distance = Math.min(distance, 1f - distance);
+        float pulse = 1f - smoothstep(length, length * edgeShape, distance);
+        return MathUtils.clamp(pulse, 0f, 1f);
     }
 
     private static java.util.ArrayList<VectorSample> sampleVectorStroke(VectorStroke stroke) {
