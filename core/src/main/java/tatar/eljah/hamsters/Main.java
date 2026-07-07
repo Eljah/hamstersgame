@@ -55,7 +55,7 @@ public class Main extends ApplicationAdapter {
     private static final float BLOCK_SVG_PADDING = 4f;
     private static final float LINE_EFFECT_BASE_OPACITY = 0.88f;
     private static final float NEW_LINE_INK_ALPHA_MULTIPLIER = 1.95f;
-    private static final String LINE_RENDER_CACHE_VERSION = "line-render-v104-one-sided-curve-vein-mask";
+    private static final String LINE_RENDER_CACHE_VERSION = "line-render-v117-tight-curve-fill-threshold";
 
     private SpriteBatch batch;
     private Texture hamsterTexture;
@@ -1461,13 +1461,40 @@ public class Main extends ApplicationAdapter {
     private static void applyCurveVeinLightMask(float[][] coverage, float[][] curveVeinLight, int width, int height) {
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
-                float mask = curveVeinLight[x][y];
+                float mask = smoothedCurveVeinLight(curveVeinLight, width, height, x, y);
                 if (mask <= 0.01f || coverage[x][y] <= 0f) {
                     continue;
                 }
-                coverage[x][y] *= 1f - 0.99f * MathUtils.clamp(mask, 0f, 1f);
+                mask = mask * mask * (3f - 2f * mask);
+                coverage[x][y] *= 1f - 0.90f * MathUtils.clamp(mask, 0f, 1f);
             }
         }
+    }
+
+    private static float smoothedCurveVeinLight(float[][] curveVeinLight, int width, int height, int x, int y) {
+        float sum = 0f;
+        float weight = 0f;
+        float max = curveVeinLight[x][y];
+        for (int oy = -7; oy <= 7; oy++) {
+            int yy = y + oy;
+            if (yy < 0 || yy >= height) {
+                continue;
+            }
+            for (int ox = -7; ox <= 7; ox++) {
+                int xx = x + ox;
+                if (xx < 0 || xx >= width) {
+                    continue;
+                }
+                float d2 = ox * ox + oy * oy;
+                float w = 1f / (1f + d2 * 0.32f);
+                float value = curveVeinLight[xx][yy];
+                sum += value * w;
+                weight += w;
+                max = Math.max(max, value);
+            }
+        }
+        float average = weight == 0f ? 0f : sum / weight;
+        return MathUtils.clamp(MathUtils.lerp(average, max, 0.24f), 0f, 1f);
     }
 
     private static void renderVectorBallpointStroke(float[][] coverage,
@@ -1512,7 +1539,7 @@ public class Main extends ApplicationAdapter {
             float ty = dy / len;
             float nx = -ty;
             float ny = tx;
-            float curveSign = curveSignAt(samples, i, tx, ty, scaleX, scaleY);
+            float curveSign = curveSignAt(samples, i, tx, ty, scaleX, scaleY, lineWidth);
             while (nextStamp <= s1) {
                 if (nextStamp >= s0) {
                     float t = (nextStamp - s0) / segmentLength;
@@ -1535,7 +1562,8 @@ public class Main extends ApplicationAdapter {
                                      float tx,
                                      float ty,
                                      float scaleX,
-                                     float scaleY) {
+                                     float scaleY,
+                                     float lineWidth) {
         float strongest = 0f;
         if (index > 1) {
             VectorSample a = samples.get(index - 2);
@@ -1561,7 +1589,106 @@ public class Main extends ApplicationAdapter {
                 }
             }
         }
-        return MathUtils.clamp(strongest, -1f, 1f);
+        if (Math.abs(strongest) <= 0.001f) {
+            return 0f;
+        }
+        float side = Math.signum(strongest);
+        float strongestRadius = windowedCurveRadius(samples, index, scaleX, scaleY, lineWidth);
+        float tightCurveFade = smoothstep(lineWidth * 4f, lineWidth * 4.8f, strongestRadius);
+        float inflectionFade = inflectionFadeAt(samples, index, tx, ty, scaleX, scaleY, lineWidth, side);
+        return MathUtils.clamp(strongest * tightCurveFade * inflectionFade, -1f, 1f);
+    }
+
+    private static float windowedCurveRadius(java.util.ArrayList<VectorSample> samples,
+                                             int index,
+                                             float scaleX,
+                                             float scaleY,
+                                             float lineWidth) {
+        int left = Math.max(1, index - 8);
+        int right = Math.min(samples.size() - 2, index + 8);
+        while (left < index && Math.abs((samples.get(index).s - samples.get(left).s) * (scaleX + scaleY) * 0.5f) < lineWidth * 2.5f) {
+            left--;
+            if (left <= 1) {
+                break;
+            }
+        }
+        while (right > index && Math.abs((samples.get(right).s - samples.get(index).s) * (scaleX + scaleY) * 0.5f) < lineWidth * 2.5f) {
+            right++;
+            if (right >= samples.size() - 2) {
+                break;
+            }
+        }
+        float[] leftTangent = tangentBetween(samples, left - 1, left, scaleX, scaleY);
+        float[] rightTangent = tangentBetween(samples, right, right + 1, scaleX, scaleY);
+        if (leftTangent == null || rightTangent == null) {
+            return Float.MAX_VALUE;
+        }
+        float dot = MathUtils.clamp(leftTangent[0] * rightTangent[0] + leftTangent[1] * rightTangent[1], -1f, 1f);
+        float turn = (float) Math.acos(dot);
+        if (turn <= 0.001f) {
+            return Float.MAX_VALUE;
+        }
+        float arcLength = Math.abs((samples.get(right).s - samples.get(left).s) * (scaleX + scaleY) * 0.5f);
+        return arcLength / turn;
+    }
+
+    private static float[] tangentBetween(java.util.ArrayList<VectorSample> samples,
+                                          int from,
+                                          int to,
+                                          float scaleX,
+                                          float scaleY) {
+        if (from < 0 || to < 0 || from >= samples.size() || to >= samples.size()) {
+            return null;
+        }
+        VectorSample a = samples.get(from);
+        VectorSample b = samples.get(to);
+        float dx = (b.x - a.x) * scaleX;
+        float dy = (b.y - a.y) * scaleY;
+        float len = (float) Math.sqrt(dx * dx + dy * dy);
+        if (len <= 0.001f) {
+            return null;
+        }
+        return new float[]{dx / len, dy / len};
+    }
+
+    private static float inflectionFadeAt(java.util.ArrayList<VectorSample> samples,
+                                          int index,
+                                          float tx,
+                                          float ty,
+                                          float scaleX,
+                                          float scaleY,
+                                          float lineWidth,
+                                          float side) {
+        float nearestOppositeDistance = Float.MAX_VALUE;
+        float centerS = samples.get(index).s;
+        for (int offset = -8; offset <= 8; offset++) {
+            int sampleIndex = index + offset;
+            if (sampleIndex <= 1 || sampleIndex >= samples.size() - 1) {
+                continue;
+            }
+            float signed = localTurnSign(samples, sampleIndex, scaleX, scaleY);
+            if (Math.abs(signed) <= 0.10f || Math.signum(signed) == side) {
+                continue;
+            }
+            float distance = Math.abs(samples.get(sampleIndex).s - centerS) * (scaleX + scaleY) * 0.5f;
+            nearestOppositeDistance = Math.min(nearestOppositeDistance, distance);
+        }
+        if (nearestOppositeDistance == Float.MAX_VALUE) {
+            return 1f;
+        }
+        return smoothstep(lineWidth * 1.8f, lineWidth * 4.2f, nearestOppositeDistance);
+    }
+
+    private static float localTurnSign(java.util.ArrayList<VectorSample> samples,
+                                       int index,
+                                       float scaleX,
+                                       float scaleY) {
+        float[] prev = tangentBetween(samples, index - 1, index, scaleX, scaleY);
+        float[] next = tangentBetween(samples, index, index + 1, scaleX, scaleY);
+        if (prev == null || next == null) {
+            return 0f;
+        }
+        return prev[0] * next[1] - prev[1] * next[0];
     }
 
     private static java.util.ArrayList<Float> detectPressStarts(java.util.ArrayList<VectorSample> samples, float scale) {
@@ -1669,9 +1796,10 @@ public class Main extends ApplicationAdapter {
                 float body = 1f - smoothstep(0.94f, 1.08f, r);
                 float edgeVein = smoothstep(0.72f, 0.92f, r) * (1f - smoothstep(0.98f, 1.08f, r));
                 float curveAmount = MathUtils.clamp(Math.abs(curveSign) * 80f, 0f, 1f);
-                float directedSide = MathUtils.clamp(cross / Math.max(1f, capHalfWidth), 0f, 1f);
+                float curveSide = curveSign == 0f ? 0f : Math.signum(curveSign);
+                float directedSide = MathUtils.clamp(cross * curveSide / Math.max(1f, capHalfWidth), 0f, 1f);
                 directedSide = directedSide * directedSide * (3f - 2f * directedSide);
-                float curveEdge = smoothstep(0.34f, 0.76f, r);
+                float curveEdge = smoothstep(0.16f, 0.92f, r);
                 float curveLightPhase = 1f;
                 float innerCurveLight = curveLightPhase * curveAmount * directedSide * curveEdge;
                 float inwardRamp = smoothstep(0f, 0.92f, r);
@@ -1694,8 +1822,8 @@ public class Main extends ApplicationAdapter {
                         * alongFalloff * startInk * dryBallMask;
                 alpha = MathUtils.clamp(alpha, 0f, 0.96f);
                 coverage[x][y] = Math.max(coverage[x][y], alpha);
-                if (curveEdge > 0.35f && innerCurveLight > 0.05f) {
-                    curveVeinLight[x][y] = Math.max(curveVeinLight[x][y], innerCurveLight * curveEdge);
+                if (curveEdge > 0.10f && innerCurveLight > 0.03f) {
+                    curveVeinLight[x][y] = Math.max(curveVeinLight[x][y], innerCurveLight);
                 }
             }
         }
