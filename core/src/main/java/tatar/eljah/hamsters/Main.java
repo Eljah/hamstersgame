@@ -55,7 +55,7 @@ public class Main extends ApplicationAdapter {
     private static final float BLOCK_SVG_PADDING = 4f;
     private static final float LINE_EFFECT_BASE_OPACITY = 0.88f;
     private static final float NEW_LINE_INK_ALPHA_MULTIPLIER = 1.95f;
-    private static final String LINE_RENDER_CACHE_VERSION = "line-render-v119-short-defects-balanced-alpha-noise";
+    private static final String LINE_RENDER_CACHE_VERSION = "line-render-v124-local-tight-corner-press";
 
     private SpriteBatch batch;
     private Texture hamsterTexture;
@@ -1548,8 +1548,9 @@ public class Main extends ApplicationAdapter {
                     float pressure = rollingPressure(nextStamp, pathLength, lineWidth);
                     float startDistance = distanceFromPressStart(nextStamp, pressStarts, lineWidth);
                     float startPress = startPressFromDistance(startDistance, lineWidth);
+                    float cornerPress = cornerPressAt(samples, i, nextStamp, scaleX, scaleY, lineWidth);
                     drawRollingBallStamp(coverage, curveVeinLight, width, height, cx, cy, tx, ty, nx, ny, nextStamp,
-                            radius, maxRadius, lineWidth, period, pressure, startPress, startDistance, curveSign);
+                            radius, maxRadius, lineWidth, period, pressure, startPress, cornerPress, startDistance, curveSign);
                 }
                 nextStamp += stampStep;
             }
@@ -1594,7 +1595,7 @@ public class Main extends ApplicationAdapter {
         }
         float side = Math.signum(strongest);
         float strongestRadius = windowedCurveRadius(samples, index, scaleX, scaleY, lineWidth);
-        float tightCurveFade = smoothstep(lineWidth * 4f, lineWidth * 4.8f, strongestRadius);
+        float tightCurveFade = smoothstep(lineWidth * 4f, lineWidth * 4.12f, strongestRadius);
         float inflectionFade = inflectionFadeAt(samples, index, tx, ty, scaleX, scaleY, lineWidth, side);
         return MathUtils.clamp(strongest * tightCurveFade * inflectionFade, -1f, 1f);
     }
@@ -1691,6 +1692,45 @@ public class Main extends ApplicationAdapter {
         return prev[0] * next[1] - prev[1] * next[0];
     }
 
+    private static float cornerPressAt(java.util.ArrayList<VectorSample> samples,
+                                       int index,
+                                       float pathDistance,
+                                       float scaleX,
+                                       float scaleY,
+                                       float lineWidth) {
+        float press = 0f;
+        for (int offset = -7; offset <= 7; offset++) {
+            int sampleIndex = index + offset;
+            if (sampleIndex <= 1 || sampleIndex >= samples.size() - 1) {
+                continue;
+            }
+            float distance = Math.abs(samples.get(sampleIndex).s * (scaleX + scaleY) * 0.5f - pathDistance);
+            float influence = 1f - smoothstep(0f, lineWidth * 3.4f, distance);
+            if (influence <= 0f) {
+                continue;
+            }
+            press = Math.max(press, rawCornerPressAt(samples, sampleIndex, scaleX, scaleY, lineWidth) * influence);
+        }
+        return MathUtils.clamp(press, 0f, 1f);
+    }
+
+    private static float rawCornerPressAt(java.util.ArrayList<VectorSample> samples,
+                                          int index,
+                                          float scaleX,
+                                          float scaleY,
+                                          float lineWidth) {
+        float radius = windowedCurveRadius(samples, index, scaleX, scaleY, lineWidth);
+        float tightRadiusPress = 1f - smoothstep(lineWidth * 4f, lineWidth * 4.18f, radius);
+        float sharpAnglePress = 0f;
+        float[] prev = tangentBetween(samples, index - 1, index, scaleX, scaleY);
+        float[] next = tangentBetween(samples, index, index + 1, scaleX, scaleY);
+        if (prev != null && next != null) {
+            float dot = MathUtils.clamp(prev[0] * next[0] + prev[1] * next[1], -1f, 1f);
+            sharpAnglePress = 1f - smoothstep(0.02f, 0.34f, dot);
+        }
+        return MathUtils.clamp(Math.max(tightRadiusPress, sharpAnglePress), 0f, 1f);
+    }
+
     private static java.util.ArrayList<Float> detectPressStarts(java.util.ArrayList<VectorSample> samples, float scale) {
         java.util.ArrayList<Float> starts = new java.util.ArrayList<>();
         starts.add(0f);
@@ -1760,9 +1800,11 @@ public class Main extends ApplicationAdapter {
                                              float period,
                                              float pressure,
                                              float startPress,
+                                             float cornerPress,
                                              float startDistance,
                                              float curveSign) {
-        float activeRadius = MathUtils.lerp(radius, radius * 1.2f, startPress);
+        float pressInk = Math.max(startPress, cornerPress);
+        float activeRadius = MathUtils.lerp(radius, radius * 1.2f, pressInk);
         int minX = Math.max(0, MathUtils.floor(cx - maxRadius - 1f));
         int maxX = Math.min(width - 1, MathUtils.ceil(cx + maxRadius + 1f));
         int minY = Math.max(0, MathUtils.floor(cy - maxRadius - 1f));
@@ -1790,6 +1832,7 @@ public class Main extends ApplicationAdapter {
                     alongFalloff = 1f - smoothstep(activeRadius * 0.94f, activeRadius, -localFromStart);
                 }
                 float r = Math.abs(cross) / Math.max(1f, capHalfWidth);
+                float sideU = cross / Math.max(1f, capHalfWidth);
                 if (r > 1.08f || alongFalloff <= 0f || localFromStart <= -activeRadius) {
                     continue;
                 }
@@ -1814,9 +1857,9 @@ public class Main extends ApplicationAdapter {
                 float tailNoise = 0.58f + 0.42f * pseudoInkNoise(periodIndex * 131 + MathUtils.floor(local * 17f), MathUtils.floor(r * 29f) + 23);
                 float middleTailFill = 0.20f * body * (1f - edgeVein) * afterStart * tailNoise;
                 float waveMix = 0.74f + 0.26f * rollingWave;
-                float startInk = MathUtils.lerp(1f, 1.55f, startPress);
-                float startWave = MathUtils.lerp(waveMix, 1.08f, startPress);
-                float dryBallMask = dryBallDefectMask(inPeriod, periodIndex, r, lineWidth, startDistance);
+                float startInk = MathUtils.lerp(1f, 1.55f, pressInk);
+                float startWave = MathUtils.lerp(waveMix, 1.08f, pressInk);
+                float dryBallMask = dryBallDefectMask(inPeriod, periodIndex, r, sideU, lineWidth, startDistance, pressInk);
                 float alpha = BALLPOINT_TARGET_COVERAGE * 0.25f * pressure
                         * (profile * startWave * fiber + middleTailFill)
                         * alongFalloff * startInk * dryBallMask;
@@ -1833,8 +1876,10 @@ public class Main extends ApplicationAdapter {
     private static float dryBallDefectMask(float inPeriod,
                                            int periodIndex,
                                            float r,
+                                           float sideU,
                                            float lineWidth,
-                                           float startDistance) {
+                                           float startDistance,
+                                           float pressInk) {
         if (startDistance != Float.MAX_VALUE && startDistance < lineWidth * 4.2f) {
             return 1f;
         }
@@ -1851,6 +1896,15 @@ public class Main extends ApplicationAdapter {
                 0.007f + 0.004f * pseudoInkNoise(periodIndex * 83 + 29, 37),
                 2.05f);
         float defect = Math.max(defectA, defectB * 0.88f);
+        float lowerHalfDefect = dryBallDefectPulse(inPeriod,
+                0.46f + 0.07f * pseudoInkNoise(periodIndex * 127 + 23, 47),
+                0.008f + 0.003f * pseudoInkNoise(periodIndex * 149 + 31, 59),
+                1.65f) * halfLineDefectWeight(sideU);
+        float upperHalfDefect = dryBallDefectPulse(inPeriod,
+                0.86f + 0.06f * pseudoInkNoise(periodIndex * 157 + 41, 71),
+                0.0075f + 0.003f * pseudoInkNoise(periodIndex * 167 + 53, 83),
+                1.75f) * halfLineDefectWeight(-sideU);
+        defect = Math.max(defect, Math.max(lowerHalfDefect, upperHalfDefect) * 0.76f);
         if (defect <= 0f) {
             return 1f;
         }
@@ -1863,6 +1917,12 @@ public class Main extends ApplicationAdapter {
         distance = Math.min(distance, 1f - distance);
         float pulse = 1f - smoothstep(length, length * edgeShape, distance);
         return MathUtils.clamp(pulse, 0f, 1f);
+    }
+
+    private static float halfLineDefectWeight(float sideU) {
+        float half = smoothstep(-0.06f, 0.22f, sideU);
+        float edge = 1f - smoothstep(0.94f, 1.08f, Math.abs(sideU));
+        return MathUtils.clamp(half * edge, 0f, 1f);
     }
 
     private static float topAlphaNoise(float s, float cross, float r, float lineWidth) {
