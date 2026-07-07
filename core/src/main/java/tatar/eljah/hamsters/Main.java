@@ -55,7 +55,7 @@ public class Main extends ApplicationAdapter {
     private static final float BLOCK_SVG_PADDING = 4f;
     private static final float LINE_EFFECT_BASE_OPACITY = 0.88f;
     private static final float NEW_LINE_INK_ALPHA_MULTIPLIER = 1.95f;
-    private static final String LINE_RENDER_CACHE_VERSION = "line-render-v87-wider-red-ballpoint";
+    private static final String LINE_RENDER_CACHE_VERSION = "line-render-v88-start-press-ballpoint";
 
     private SpriteBatch batch;
     private Texture hamsterTexture;
@@ -1462,10 +1462,12 @@ public class Main extends ApplicationAdapter {
         }
         float lineWidth = Math.max(2f, stroke.strokeWidth * scale);
         float radius = Math.max(2f, lineWidth * 0.62f);
-        float period = Math.max(8f, lineWidth * 3.1415927f);
+        float maxRadius = radius * 1.2f;
+        float period = Math.max(8f, lineWidth * 3.1415927f * 3f);
         float pathLength = samples.get(samples.size() - 1).s * scale;
         float stampStep = Math.max(0.55f, lineWidth * 0.10f);
         float nextStamp = 0f;
+        java.util.ArrayList<Float> pressStarts = detectPressStarts(samples, scale);
 
         VectorSample prev = samples.get(0);
         for (int i = 1; i < samples.size(); i++) {
@@ -1494,12 +1496,51 @@ public class Main extends ApplicationAdapter {
                     float cx = MathUtils.lerp(x0, x1, t);
                     float cy = MathUtils.lerp(y0, y1, t);
                     float pressure = rollingPressure(nextStamp, pathLength, lineWidth);
-                    drawRollingBallStamp(coverage, width, height, cx, cy, tx, ty, nx, ny, nextStamp, radius, lineWidth, period, pressure);
+                    float startPress = startPressAt(nextStamp, pressStarts, lineWidth);
+                    drawRollingBallStamp(coverage, width, height, cx, cy, tx, ty, nx, ny, nextStamp,
+                            radius, maxRadius, lineWidth, period, pressure, startPress);
                 }
                 nextStamp += stampStep;
             }
             prev = current;
         }
+    }
+
+    private static java.util.ArrayList<Float> detectPressStarts(java.util.ArrayList<VectorSample> samples, float scale) {
+        java.util.ArrayList<Float> starts = new java.util.ArrayList<>();
+        starts.add(0f);
+        for (int i = 1; i < samples.size() - 1; i++) {
+            VectorSample prev = samples.get(i - 1);
+            VectorSample current = samples.get(i);
+            VectorSample next = samples.get(i + 1);
+            float ax = current.x - prev.x;
+            float ay = current.y - prev.y;
+            float bx = next.x - current.x;
+            float by = next.y - current.y;
+            float alen = (float) Math.sqrt(ax * ax + ay * ay);
+            float blen = (float) Math.sqrt(bx * bx + by * by);
+            if (alen <= 0.001f || blen <= 0.001f) {
+                continue;
+            }
+            float dot = (ax * bx + ay * by) / (alen * blen);
+            if (dot < 0.45f) {
+                starts.add(current.s * scale);
+            }
+        }
+        return starts;
+    }
+
+    private static float startPressAt(float s, java.util.ArrayList<Float> pressStarts, float lineWidth) {
+        float length = Math.max(lineWidth * 5.5f, 10f);
+        float strongest = 0f;
+        for (Float start : pressStarts) {
+            float distance = s - start;
+            if (distance < 0f || distance > length) {
+                continue;
+            }
+            strongest = Math.max(strongest, 1f - smoothstep(0f, length, distance));
+        }
+        return strongest;
     }
 
     private static float rollingPressure(float s, float pathLength, float lineWidth) {
@@ -1520,13 +1561,16 @@ public class Main extends ApplicationAdapter {
                                              float ny,
                                              float s,
                                              float radius,
+                                             float maxRadius,
                                              float lineWidth,
                                              float period,
-                                             float pressure) {
-        int minX = Math.max(0, MathUtils.floor(cx - radius - 1f));
-        int maxX = Math.min(width - 1, MathUtils.ceil(cx + radius + 1f));
-        int minY = Math.max(0, MathUtils.floor(cy - radius - 1f));
-        int maxY = Math.min(height - 1, MathUtils.ceil(cy + radius + 1f));
+                                             float pressure,
+                                             float startPress) {
+        float activeRadius = MathUtils.lerp(radius, radius * 1.2f, startPress);
+        int minX = Math.max(0, MathUtils.floor(cx - maxRadius - 1f));
+        int maxX = Math.min(width - 1, MathUtils.ceil(cx + maxRadius + 1f));
+        int minY = Math.max(0, MathUtils.floor(cy - maxRadius - 1f));
+        int maxY = Math.min(height - 1, MathUtils.ceil(cy + maxRadius + 1f));
         float phase = s / period;
         int periodIndex = MathUtils.floor(phase);
         float inPeriod = phase - periodIndex;
@@ -1540,7 +1584,7 @@ public class Main extends ApplicationAdapter {
                 float py = y + 0.5f - cy;
                 float along = px * tx + py * ty;
                 float cross = px * nx + py * ny;
-                float r = Math.abs(cross) / Math.max(1f, radius);
+                float r = Math.abs(cross) / Math.max(1f, activeRadius);
                 float alongLimit = Math.max(1.2f, lineWidth * 0.18f);
                 float alongFalloff = 1f - smoothstep(alongLimit * 0.45f, alongLimit, Math.abs(along));
                 if (r > 1.08f || alongFalloff <= 0f) {
@@ -1561,7 +1605,10 @@ public class Main extends ApplicationAdapter {
                     fiber *= 1.20f;
                 }
                 float waveMix = 0.74f + 0.26f * rollingWave;
-                float alpha = BALLPOINT_TARGET_COVERAGE * 0.25f * pressure * profile * waveMix * repeatedScratch * fiber * alongFalloff;
+                float startInk = MathUtils.lerp(1f, 1.55f, startPress);
+                float startScratch = MathUtils.lerp(repeatedScratch, 1f, startPress);
+                float startWave = MathUtils.lerp(waveMix, 1.08f, startPress);
+                float alpha = BALLPOINT_TARGET_COVERAGE * 0.25f * pressure * profile * startWave * startScratch * fiber * alongFalloff * startInk;
                 coverage[x][y] = Math.max(coverage[x][y], MathUtils.clamp(alpha, 0f, 0.96f));
             }
         }
