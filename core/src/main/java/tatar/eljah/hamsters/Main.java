@@ -45,16 +45,17 @@ public class Main extends ApplicationAdapter {
     private static final float MIN_PEN_WIDTH_PX = 2.75f;
     private static final float MAX_PEN_WIDTH_PX = 7.5f;
     private static final float NEW_LINE_STROKE_MULTIPLIER = 0.90f;
-    private static final float GRADE_BALLPOINT_STROKE_MULTIPLIER = 3.25f;
-    private static final float BLOCK_BALLPOINT_STROKE_MULTIPLIER = 1.55f;
+    private static final float GRADE_BALLPOINT_STROKE_MULTIPLIER = 1.625f;
+    private static final float BLOCK_BALLPOINT_STROKE_MULTIPLIER = 0.775f;
     private static final float BALLPOINT_TARGET_COVERAGE = 3.55f;
+    private static final float RED_BALLPOINT_ALPHA_MULTIPLIER = 1.35f;
     private static final int BALLPOINT_RENDER_SCALE = 4;
     private static final int BALLPOINT_RENDER_PADDING_PX = 8;
     private static final float GRADE_SVG_PADDING = 6f;
     private static final float BLOCK_SVG_PADDING = 4f;
     private static final float LINE_EFFECT_BASE_OPACITY = 0.88f;
     private static final float NEW_LINE_INK_ALPHA_MULTIPLIER = 1.95f;
-    private static final String LINE_RENDER_CACHE_VERSION = "line-render-v85-vector-roll";
+    private static final String LINE_RENDER_CACHE_VERSION = "line-render-v87-wider-red-ballpoint";
 
     private SpriteBatch batch;
     private Texture hamsterTexture;
@@ -1433,11 +1434,19 @@ public class Main extends ApplicationAdapter {
                 if (alpha <= 0.01f) {
                     continue;
                 }
-                pixmap.setColor(inkColor.r, inkColor.g, inkColor.b, MathUtils.clamp(alpha, 0f, 0.96f));
+                float colorAlpha = alpha * ballpointColorAlphaMultiplier(inkColor);
+                pixmap.setColor(inkColor.r, inkColor.g, inkColor.b, MathUtils.clamp(colorAlpha, 0f, 0.96f));
                 pixmap.drawPixel(x, y);
             }
         }
         pixmap.setBlending(old);
+    }
+
+    private static float ballpointColorAlphaMultiplier(Color inkColor) {
+        if (inkColor.r > 0.85f && inkColor.g < 0.25f && inkColor.b < 0.25f) {
+            return RED_BALLPOINT_ALPHA_MULTIPLIER;
+        }
+        return 1f;
     }
 
     private static void renderVectorBallpointStroke(float[][] coverage,
