@@ -21,3 +21,10 @@ dependencies {
     implementation "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
     implementation "org.apache.xmlgraphics:batik-all:1.16"
 }
+
+tasks.register('runVectorAssetEditor', JavaExec) {
+    group = 'application'
+    description = 'Runs the desktop vector asset editor.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass.set('tatar.eljah.hamsters.tools.vectorasseteditor.VectorAssetEditorLauncher')
+}
